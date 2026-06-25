@@ -83,7 +83,7 @@ static bool is_valid_utf8(const char * str) {
 
 // ── Helper: new sampler ──
 static common_sampler * new_sampler(float temp) {
-    auto * sparams = common_sampler_params_default();
+    common_params_sampling sparams;
     sparams.temp = temp;
     sparams.top_k = 40;
     sparams.top_p = 0.95f;
