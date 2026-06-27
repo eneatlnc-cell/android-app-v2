@@ -6,13 +6,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 人格类型枚举
+ * 人格类型枚举 — v2.0 仪式感人格设计。
+ * 一次选择，终生绑定（除非清除 App 数据）。
  */
-enum class PersonaType(val rawValue: String, val displayName: String) {
-  FUNNY("funny", "逗比型"),
-  WARM("warm", "暖心型"),
-  COOL("cool", "高冷型"),
-  SCHOLAR("scholar", "学霸型");
+enum class PersonaType(val rawValue: String, val displayName: String, val emoji: String, val tagline: String) {
+  FUNNY("funny", "逗比型", "😄", "幽默、玩梗、轻松活泼"),
+  WARM("warm", "温柔型", "🌸", "暖心、细腻、善于倾听"),
+  SHARP("sharp", "毒舌型", "⚡", "犀利、精准、一针见血"),
+  SCHOLAR("scholar", "学霸型", "📖", "严谨、逻辑、深度思考");
 
   companion object {
     fun fromRawValue(raw: String?): PersonaType =
@@ -23,27 +24,67 @@ enum class PersonaType(val rawValue: String, val displayName: String) {
 }
 
 /**
- * 人格管理器 — 管理 4 种人格的 System Prompt，默认"逗比型"
+ * 人格管理器 — 管理 4 种人格的 System Prompt 和终身绑定状态。
+ *
+ * 存储键：
+ * - KEY_PERSONA_SELECTED: Boolean — 是否已完成仪式感选择
+ * - KEY_PERSONA_TYPE: String — 当前人格 rawValue
+ *
+ * 逻辑：
+ * - 首次启动：KEY_PERSONA_SELECTED = false → 自动使用默认人格（逗比型），不弹窗
+ * - 设置页：未选择时显示入口 → 进入全屏仪式感选择 → 选择后锁定
+ * - 已选择：设置页显示"当前人格：xxx（已锁定）"，不可再更改
  */
 class PersonaManager(context: Context) {
   companion object {
-    private const val PREFS_KEY = "persona.current"
+    private const val PREFS_NAME = "lingji_persona"
+    private const val KEY_PERSONA_SELECTED = "persona.selected"
+    private const val KEY_PERSONA_TYPE = "persona.current"
   }
 
-  private val prefs = context.getSharedPreferences("lingji_persona", Context.MODE_PRIVATE)
+  private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+  /** 是否已完成仪式感人格选择 */
+  @Volatile
+  var isPersonaSelected: Boolean = prefs.getBoolean(KEY_PERSONA_SELECTED, false)
+    private set
 
   private val _currentPersona = MutableStateFlow(loadPersona())
   val currentPersona: StateFlow<PersonaType> = _currentPersona.asStateFlow()
 
+  /**
+   * 仪式感人格选择 — 一次性锁定。
+   * 调用后 isPersonaSelected 变为 true，此后不可再调用。
+   *
+   * @return true 表示选择成功，false 表示已锁定（重复调用）
+   */
+  fun lockPersona(type: PersonaType): Boolean {
+    if (isPersonaSelected) return false
+    synchronized(this) {
+      if (isPersonaSelected) return false
+      prefs.edit()
+        .putBoolean(KEY_PERSONA_SELECTED, true)
+        .putString(KEY_PERSONA_TYPE, type.rawValue)
+        .apply()
+      isPersonaSelected = true
+      _currentPersona.value = type
+      return true
+    }
+  }
+
+  /**
+   * 设置人格（仅用于默认人格初始化，锁定后不可用）。
+   */
   fun setPersona(type: PersonaType) {
-    prefs.edit().putString(PREFS_KEY, type.rawValue).apply()
+    if (isPersonaSelected) return
+    prefs.edit().putString(KEY_PERSONA_TYPE, type.rawValue).apply()
     _currentPersona.value = type
   }
 
   fun getSystemPrompt(): String = buildSystemPrompt(_currentPersona.value)
 
   private fun loadPersona(): PersonaType {
-    val raw = prefs.getString(PREFS_KEY, null)
+    val raw = prefs.getString(KEY_PERSONA_TYPE, null)
     return PersonaType.fromRawValue(raw)
   }
 
@@ -65,46 +106,49 @@ class PersonaManager(context: Context) {
 """.trimIndent()
 
     PersonaType.WARM -> """
-你叫「灵机」，是一个温暖贴心的 AI 搭子，专为 Z 世代学生打造。
+你叫「灵机」，是一个温柔细腻的 AI 搭子，专为 Z 世代学生打造。
 
 你的性格特点：
-- 语气温柔，像知心朋友一样
-- 善于倾听和共情，先理解再回应
+- 语气温柔，像知心朋友一样，善于倾听
+- 先共情再回应，让对方感受到被理解
 - 回复真诚、有温度，不套路
-- 适当给予鼓励和支持
+- 适当给予鼓励和支持，但不过度
 
 重要规则：
 - 先共情再回应，不要直接给建议
+- 用温暖的语言表达，避免冷冰冰的分析
 - 所有回复用中文
 """.trimIndent()
 
-    PersonaType.COOL -> """
-你叫「灵机」，是一个高冷简洁的 AI 搭子，专为 Z 世代学生打造。
+    PersonaType.SHARP -> """
+你叫「灵机」，是一个犀利精准的 AI 搭子，专为 Z 世代学生打造。
 
 你的性格特点：
-- 话少但精，每句都在点子上
-- 不废话，不卖萌，不客套
-- 偶尔毒舌但无恶意
-- 理性分析，直接给结论
+- 话少但精，每句都在点子上，一针见血
+- 毒舌但无恶意，像损友一样直指问题核心
+- 不废话、不卖萌、不客套
+- 理性分析，直接给结论，偶尔带点黑色幽默
 
 重要规则：
 - 回复控制在 1-2 句话
-- 不要主动引导话题
+- 犀利但不刻薄，毒舌但不伤人
+- 不要主动引导话题，等用户先开口
 - 所有回复用中文
 """.trimIndent()
 
     PersonaType.SCHOLAR -> """
-你叫「灵机」，是一个博学多才的 AI 搭子，专为 Z 世代学生打造。
+你叫「灵机」，是一个博学严谨的 AI 搭子，专为 Z 世代学生打造。
 
 你的性格特点：
 - 知识渊博，但能用通俗语言解释复杂概念
+- 逻辑清晰，层层递进，深入浅出
 - 喜欢分享冷知识和有趣的事实
 - 偶尔掉书袋，但会自嘲
-- 把学习变成一种有趣的探索
 
 重要规则：
 - 解释概念时用类比，不要直接抛术语
 - 保持轻松，不要像教科书
+- 引用知识时给出简洁的来源说明
 - 所有回复用中文
 """.trimIndent()
   }

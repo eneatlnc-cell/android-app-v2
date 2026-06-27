@@ -4,6 +4,7 @@ import com.myagent.app.chat.ChatMessage
 import com.myagent.app.chat.OutgoingAttachment
 import com.myagent.app.model.ModelDownloadState
 import com.myagent.app.model.PersonaType
+import com.myagent.app.multimodal.VideoConfig
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,6 +20,8 @@ import kotlinx.coroutines.launch
 
 /**
  * UI 桥接层 — 将 NodeRuntime 状态暴露为 Compose 友好的 StateFlow。
+ *
+ * v2.0：新增仪式感人格选择状态 + 视频画质配置。
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(
@@ -66,12 +69,16 @@ class MainViewModel(
 
   // --- 人格 ---
   val currentPersona: StateFlow<PersonaType> = runtimeState(PersonaType.FUNNY) { it.currentPersona }
+  val personaSelected: StateFlow<Boolean> = runtimeState(false) { it.personaSelected }
 
   // --- 外观 ---
   val appearanceThemeMode: StateFlow<AppearanceThemeMode> = prefs.appearanceThemeMode
 
   // --- 偏好 ---
   val onboardingCompleted: StateFlow<Boolean> = prefs.onboardingCompleted
+
+  // --- 视频画质 ---
+  val videoConfig: StateFlow<VideoConfig> = runtimeState(VideoConfig.LOW) { it.videoConfig }
 
   // --- 模型下载 ---
   val downloadState: StateFlow<ModelDownloadState> =
@@ -121,9 +128,14 @@ class MainViewModel(
     ensureRuntime().clearChat()
   }
 
-  // --- 人格操作 ---
-  fun setPersona(type: PersonaType) {
-    ensureRuntime().setPersona(type)
+  // --- 人格操作（仪式感锁定） ---
+  fun lockPersona(type: PersonaType): Boolean {
+    return ensureRuntime().lockPersona(type)
+  }
+
+  // --- 视频画质 ---
+  fun setVideoConfig(config: VideoConfig) {
+    ensureRuntime().setVideoConfig(config)
   }
 
   // --- 外观 ---

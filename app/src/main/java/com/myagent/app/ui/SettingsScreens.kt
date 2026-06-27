@@ -4,6 +4,7 @@ import com.myagent.app.AppearanceThemeMode
 import com.myagent.app.MainViewModel
 import com.myagent.app.model.ModelDownloadState
 import com.myagent.app.model.PersonaType
+import com.myagent.app.multimodal.VideoConfig
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,8 +18,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,18 +43,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
- * 设置页面。
+ * 设置页面 — v2.0 仪式感人格 + 视频画质设置。
  */
 @Composable
 fun SettingsScreen(
   viewModel: MainViewModel,
   modifier: Modifier = Modifier,
+  onRequestPersonaSelection: () -> Unit = {},
 ) {
   val currentPersona by viewModel.currentPersona.collectAsState()
+  val personaSelected by viewModel.personaSelected.collectAsState()
   val appearanceMode by viewModel.appearanceThemeMode.collectAsState()
   val downloadState by viewModel.downloadState.collectAsState()
-  var showPersonaDialog by remember { mutableStateOf(false) }
+  val videoConfig by viewModel.videoConfig.collectAsState()
   var showAppearanceDialog by remember { mutableStateOf(false) }
+  var showVideoDialog by remember { mutableStateOf(false) }
 
   Column(
     modifier = modifier
@@ -64,17 +70,46 @@ fun SettingsScreen(
       modifier = Modifier.padding(bottom = 16.dp),
     )
 
-    // 人格设置
-    SettingsRow(
-      icon = Icons.Default.Person,
-      title = "AI 人格",
-      subtitle = currentPersona.displayName,
-      onClick = { showPersonaDialog = true },
-    )
+    // ── 人格设置（仪式感） ──
+    if (personaSelected) {
+      // 已锁定：显示当前人格，不可点击
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(vertical = 16.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Icon(
+          imageVector = Icons.Default.Lock,
+          contentDescription = null,
+          tint = Color(0xFF6C5CE7),
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = "AI 人格",
+            style = MaterialTheme.typography.bodyLarge,
+          )
+          Text(
+            text = "${currentPersona.emoji} ${currentPersona.displayName}（已锁定，终身有效）",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF6C5CE7),
+          )
+        }
+      }
+    } else {
+      // 未选择：显示入口
+      SettingsRow(
+        icon = Icons.Default.Person,
+        title = "选择人格",
+        subtitle = "当前：${currentPersona.displayName}（默认，可更改）",
+        onClick = onRequestPersonaSelection,
+      )
+    }
 
     HorizontalDivider()
 
-    // 外观设置
+    // ── 外观设置 ──
     SettingsRow(
       icon = Icons.Default.Palette,
       title = "外观",
@@ -88,7 +123,17 @@ fun SettingsScreen(
 
     HorizontalDivider()
 
-    // 模型下载
+    // ── 视频画质设置 ──
+    SettingsRow(
+      icon = Icons.Default.Videocam,
+      title = "视频画质",
+      subtitle = videoConfigLabel(videoConfig),
+      onClick = { showVideoDialog = true },
+    )
+
+    HorizontalDivider()
+
+    // ── 模型下载 ──
     DownloadSection(
       state = downloadState,
       onStartDownload = { viewModel.resetModelDownload() },
@@ -103,18 +148,6 @@ fun SettingsScreen(
     )
   }
 
-  // 人格选择弹窗
-  if (showPersonaDialog) {
-    PersonaDialog(
-      currentPersona = currentPersona,
-      onSelect = {
-        viewModel.setPersona(it)
-        showPersonaDialog = false
-      },
-      onDismiss = { showPersonaDialog = false },
-    )
-  }
-
   // 外观选择弹窗
   if (showAppearanceDialog) {
     AppearanceDialog(
@@ -124,6 +157,18 @@ fun SettingsScreen(
         showAppearanceDialog = false
       },
       onDismiss = { showAppearanceDialog = false },
+    )
+  }
+
+  // 视频画质选择弹窗
+  if (showVideoDialog) {
+    VideoConfigDialog(
+      currentConfig = videoConfig,
+      onSelect = {
+        viewModel.setVideoConfig(it)
+        showVideoDialog = false
+      },
+      onDismiss = { showVideoDialog = false },
     )
   }
 }
@@ -164,31 +209,56 @@ private fun SettingsRow(
   }
 }
 
+// ── 视频画质标签 ──
+private fun videoConfigLabel(config: VideoConfig): String {
+  val presetIndex = VideoConfig.PRESETS.indexOfFirst {
+    it.width == config.width && it.height == config.height && it.fps == config.fps
+  }
+  return if (presetIndex >= 0) {
+    VideoConfig.PRESET_LABELS[presetIndex]
+  } else {
+    "${config.width}x${config.height} · ${config.fps}fps · ${config.maxDuration}s"
+  }
+}
+
 @Composable
-private fun PersonaDialog(
-  currentPersona: PersonaType,
-  onSelect: (PersonaType) -> Unit,
+private fun VideoConfigDialog(
+  currentConfig: VideoConfig,
+  onSelect: (VideoConfig) -> Unit,
   onDismiss: () -> Unit,
 ) {
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("选择 AI 人格") },
+    title = { Text("视频画质") },
     text = {
       Column {
-        for (persona in PersonaType.entries) {
+        VideoConfig.PRESETS.forEachIndexed { index, config ->
+          val isSelected = config.width == currentConfig.width &&
+            config.height == currentConfig.height &&
+            config.fps == currentConfig.fps
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .clickable { onSelect(persona) }
+              .clickable { onSelect(config) }
               .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
             RadioButton(
-              selected = persona == currentPersona,
-              onClick = { onSelect(persona) },
+              selected = isSelected,
+              onClick = { onSelect(config) },
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = persona.displayName)
+            Column {
+              Text(
+                text = VideoConfig.PRESET_LABELS[index],
+                style = MaterialTheme.typography.bodyMedium,
+              )
+              Text(
+                text = "${config.width}×${config.height} · ${config.fps}fps · 最长${config.maxDuration}s",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
           }
         }
       }

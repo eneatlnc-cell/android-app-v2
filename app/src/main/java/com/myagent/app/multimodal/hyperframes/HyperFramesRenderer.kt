@@ -26,15 +26,17 @@ import java.util.concurrent.TimeUnit
  * 3. MediaCodec 硬件编码为 MP4
  *
  * 完全本地执行，零外部依赖，纯 Android 系统 API。
+ *
+ * v2.0：默认最低画质 854x480@24fps，用户可在设置中切换。
  */
 class HyperFramesRenderer(
   private val app: Application,
 ) {
   companion object {
     private const val TAG = "HyperFrames"
-    private const val DEFAULT_FPS = 30
-    private const val DEFAULT_WIDTH = 1080
-    private const val DEFAULT_HEIGHT = 1920
+    private const val DEFAULT_WIDTH = 854
+    private const val DEFAULT_HEIGHT = 480
+    private const val DEFAULT_FPS = 24
     private const val WEBVIEW_TIMEOUT_SEC = 30L
   }
 
@@ -43,12 +45,20 @@ class HyperFramesRenderer(
 
   /**
    * 渲染视频。
+   *
+   * @param prompt 视频主题
+   * @param duration 视频时长（秒），默认 5
+   * @param width 输出宽度（默认 854）
+   * @param height 输出高度（默认 480）
+   * @param fps 帧率（默认 24）
+   * @param onProgress 进度回调（0.0 ~ 1.0）
    */
   suspend fun render(
     prompt: String,
     duration: Int = 5,
     width: Int = DEFAULT_WIDTH,
     height: Int = DEFAULT_HEIGHT,
+    fps: Int = DEFAULT_FPS,
     onProgress: ((Float) -> Unit)? = null,
   ): File = withContext(Dispatchers.Main) {
     val cacheDir = File(app.cacheDir, "hyperframes").also { it.mkdirs() }
@@ -66,12 +76,12 @@ class HyperFramesRenderer(
     }
 
     // 3. 逐帧渲染
-    val totalFrames = duration * DEFAULT_FPS
-    val encoder = BitmapToVideoEncoder(outputFile, width, height, DEFAULT_FPS)
+    val totalFrames = duration * fps
+    val encoder = BitmapToVideoEncoder(outputFile, width, height, fps)
     encoder.start()
 
     for (frameIndex in 0 until totalFrames) {
-      seekAnimation(wv, frameIndex, DEFAULT_FPS)
+      seekAnimation(wv, frameIndex, fps)
       delay(16)
       val bitmap = captureFrame(wv, width, height)
       if (bitmap != null) {
@@ -85,7 +95,7 @@ class HyperFramesRenderer(
     webView = null
     onProgress?.invoke(1.0f)
 
-    Log.i(TAG, "渲染完成: ${outputFile.absolutePath}")
+    Log.i(TAG, "渲染完成: ${outputFile.absolutePath} (${width}x${height}@${fps}fps)")
     outputFile
   }
 
@@ -255,7 +265,7 @@ class BitmapToVideoEncoder(
   private val outputFile: File,
   private val width: Int,
   private val height: Int,
-  private val fps: Int = 30,
+  private val fps: Int = 24,
 ) {
   private var mediaCodec: MediaCodec? = null
   private var mediaMuxer: MediaMuxer? = null

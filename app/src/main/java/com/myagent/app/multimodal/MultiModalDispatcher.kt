@@ -28,8 +28,8 @@ import java.io.File
  * // 合成语音
  * val audio = MultiModalDispatcher.synthesizeSpeech("你好世界", "af_bella")
  *
- * // 渲染视频
- * val video = MultiModalDispatcher.renderVideo("生日快乐", duration = 5)
+ * // 渲染视频（可传入 VideoConfig 覆盖默认参数）
+ * val video = MultiModalDispatcher.renderVideo("生日快乐", config = VideoConfig.LOW)
  * ```
  */
 object MultiModalDispatcher {
@@ -122,21 +122,39 @@ object MultiModalDispatcher {
    * 渲染视频（HTML 模板 + Web Animations → MP4）。
    *
    * @param prompt 视频主题
-   * @param duration 视频时长（秒）
-   * @param width 输出宽度（默认 1080）
-   * @param height 输出高度（默认 1920）
+   * @param config 视频配置（分辨率、帧率、时长），默认使用 VideoConfig.LOW (854x480@24fps)
    * @param onProgress 进度回调（0.0 ~ 1.0）
    * @return 生成的 MP4 文件
    */
   suspend fun renderVideo(
     prompt: String,
-    duration: Int = 5,
-    width: Int = 1080,
-    height: Int = 1920,
+    config: VideoConfig = VideoConfig.LOW,
     onProgress: ((Float) -> Unit)? = null,
   ): File {
     checkInitialized()
-    return videoRenderer!!.render(prompt, duration, width, height, onProgress)
+    return videoRenderer!!.render(
+      prompt = prompt,
+      duration = config.maxDuration,
+      width = config.width,
+      height = config.height,
+      fps = config.fps,
+      onProgress = onProgress,
+    )
+  }
+
+  /**
+   * 渲染视频（显式参数，兼容旧接口）。
+   */
+  suspend fun renderVideo(
+    prompt: String,
+    duration: Int,
+    width: Int,
+    height: Int,
+    fps: Int = 24,
+    onProgress: ((Float) -> Unit)? = null,
+  ): File {
+    checkInitialized()
+    return videoRenderer!!.render(prompt, duration, width, height, fps, onProgress)
   }
 
   /**

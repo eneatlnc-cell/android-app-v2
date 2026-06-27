@@ -78,7 +78,7 @@ fun OnboardingFlow(
       )
       2 -> PersonaStep(
         onSelect = { persona ->
-          viewModel.setPersona(persona)
+          viewModel.lockPersona(persona)
           viewModel.setOnboardingCompleted(true)
         },
       )
@@ -167,32 +167,32 @@ private fun PersonaStep(onSelect: (PersonaType) -> Unit) {
         persona = PersonaType.FUNNY,
         icon = Icons.Default.Mood,
         title = "逗比型",
-        desc = "幽默风趣，会用网络热梗",
-        emoji = "😎",
-        color = Color(0xFFFF6B6B),
+        desc = "幽默、玩梗、轻松活泼",
+        emoji = "😄",
+        color = Color(0xFF6C3CE0),
       ),
       PersonaCardData(
         persona = PersonaType.WARM,
         icon = Icons.Default.Favorite,
-        title = "暖心型",
-        desc = "温柔贴心，像知心朋友",
-        emoji = "❤️",
+        title = "温柔型",
+        desc = "暖心细腻，善于倾听",
+        emoji = "🌸",
         color = Color(0xFFFFA94D),
       ),
       PersonaCardData(
-        persona = PersonaType.COOL,
+        persona = PersonaType.SHARP,
         icon = Icons.Default.AutoAwesome,
-        title = "高冷型",
-        desc = "话少但精，偶尔毒舌",
-        emoji = "😏",
-        color = Color(0xFF6C5CE7),
+        title = "毒舌型",
+        desc = "犀利精准，一针见血",
+        emoji = "⚡",
+        color = Color(0xFF00d4aa),
       ),
       PersonaCardData(
         persona = PersonaType.SCHOLAR,
         icon = Icons.Default.School,
         title = "学霸型",
-        desc = "博学多才，通俗易懂",
-        emoji = "📚",
+        desc = "严谨、逻辑、深度思考",
+        emoji = "📖",
         color = Color(0xFF4ECDC4),
       ),
     )

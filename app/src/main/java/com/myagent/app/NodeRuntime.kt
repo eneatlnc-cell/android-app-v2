@@ -9,6 +9,7 @@ import com.myagent.app.model.ModelDownloadState
 import com.myagent.app.model.ModelInstaller
 import com.myagent.app.model.PersonaManager
 import com.myagent.app.model.PersonaType
+import com.myagent.app.multimodal.VideoConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
  * 灵机 v2.0 运行时 — 管理 UI 状态、聊天控制器、模型加载器、下载状态。
  *
  * v2.0：LiteRT-LM 替代 llama.cpp，纯 Kotlin 推理，无需 nativeLibDir。
+ * 新增：仪式感人格锁定 + 视频画质可配置。
  */
 class NodeRuntime(
   private val app: NodeApp,
@@ -30,6 +32,10 @@ class NodeRuntime(
   private val personaManager: PersonaManager,
 ) {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+  companion object {
+    private const val KEY_VIDEO_CONFIG = "video.config"
+  }
 
   // 模型安装器
   val modelInstaller = ModelInstaller(app)
@@ -55,11 +61,6 @@ class NodeRuntime(
 
   private var downloadJob: Job? = null
 
-  /** 是否已经运行过下载流程（无论成功失败） */
-  private val modelDownloadFinished: Boolean
-    get() = _downloadState.value is ModelDownloadState.Completed ||
-      _downloadState.value is ModelDownloadState.Failed
-
   /**
    * 触发模型下载。如果已完成或正在下载则忽略。
    */
@@ -72,7 +73,6 @@ class NodeRuntime(
     downloadJob = scope.launch {
       modelInstaller.downloadModel().collect { state ->
         _downloadState.value = state
-        // 下载完成后，初始化 LiteRT-LM 引擎
         if (state is ModelDownloadState.Completed && modelInstaller.isModelReady()) {
           val modelPath = modelInstaller.getModelPath().absolutePath
           modelLoader.reload(modelPath)
@@ -81,18 +81,12 @@ class NodeRuntime(
     }
   }
 
-  /**
-   * 跳过下载，继续使用 Mock 模式。
-   */
   fun skipModelDownload() {
     downloadJob?.cancel()
     downloadJob = null
     _downloadState.value = ModelDownloadState.Completed
   }
 
-  /**
-   * 重置下载状态，允许重新触发下载（从设置页调用）。
-   */
   fun resetAndStartDownload() {
     downloadJob?.cancel()
     downloadJob = null
@@ -100,16 +94,13 @@ class NodeRuntime(
     startModelDownload()
   }
 
-  /**
-   * 模型是否已就绪（已下载校验通过，或用户选择跳过）
-   */
   val isModelReady: Boolean
     get() = _downloadState.value is ModelDownloadState.Completed ||
       modelInstaller.isModelReady()
 
   // --- UI 状态 ---
 
-  private val _isConnected = MutableStateFlow(true) // v2.0 本地推理，始终"在线"
+  private val _isConnected = MutableStateFlow(true)
   val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
   val chatMessages: StateFlow<List<ChatMessage>> = chatController.messages
@@ -119,16 +110,42 @@ class NodeRuntime(
 
   // 人格
   val currentPersona: StateFlow<PersonaType> = personaManager.currentPersona
+  val personaSelected: StateFlow<Boolean> = MutableStateFlow(personaManager.isPersonaSelected).asStateFlow()
 
   // 外观
   val appearanceThemeMode: StateFlow<AppearanceThemeMode> = prefs.appearanceThemeMode
+
+  // --- 视频画质配置 ---
+
+  private val _videoConfig = MutableStateFlow(loadVideoConfig())
+  val videoConfig: StateFlow<VideoConfig> = _videoConfig.asStateFlow()
+
+  private fun loadVideoConfig(): VideoConfig {
+    val raw = app.getSharedPreferences("lingji.v2", android.content.Context.MODE_PRIVATE)
+      .getString(KEY_VIDEO_CONFIG, null)
+    return VideoConfig.fromString(raw)
+  }
+
+  fun setVideoConfig(config: VideoConfig) {
+    app.getSharedPreferences("lingji.v2", android.content.Context.MODE_PRIVATE)
+      .edit()
+      .putString(KEY_VIDEO_CONFIG, VideoConfig.toString(config))
+      .apply()
+    _videoConfig.value = config
+  }
+
+  // --- 操作 ---
 
   fun setForeground(value: Boolean) {
     // v2.0 本地推理，无需特殊处理
   }
 
-  fun setPersona(type: PersonaType) {
-    personaManager.setPersona(type)
+  fun lockPersona(type: PersonaType): Boolean {
+    val result = personaManager.lockPersona(type)
+    if (result) {
+      (personaSelected as MutableStateFlow).value = true
+    }
+    return result
   }
 
   fun sendChat(message: String, attachments: List<OutgoingAttachment> = emptyList()) {
