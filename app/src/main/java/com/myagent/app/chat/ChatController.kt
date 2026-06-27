@@ -16,11 +16,11 @@ import java.util.UUID
  *
  * 数据流：
  * 用户输入 → PersonaManager.getSystemPrompt()
- *          → MemoryManager.getRecentMemories(5)
+ *          → MemoryManager.getFullContext()  [短期 5 条 + 长期 3 条摘要]
  *          → 组装 Prompt
  *          → LocalModelLoader.generate() [流式]
  *          → UI 逐字显示
- *          → MemoryManager.saveMemory()
+ *          → MemoryManager.saveMemory()  [自动压缩超出部分到长期]
  *
  * v2.0：LocalModelLoader 底层使用 LiteRT-LM 引擎，纯 Kotlin 实现。
  */
@@ -74,19 +74,14 @@ class ChatController(
         // 1. 获取人格 System Prompt
         val systemPrompt = personaManager.getSystemPrompt()
 
-        // 2. 获取最近记忆
-        val recentMemories = memoryManager.getRecentMemories(5)
-        val memoryContext = if (recentMemories.isNotEmpty()) {
-          recentMemories.joinToString("\n") { "${it.role}: ${it.content}" }
-        } else {
-          ""
-        }
+        // 2. 获取双层记忆上下文（短期 5 条 + 长期 3 条摘要）
+        val memoryContext = memoryManager.getFullContext()
 
         // 3. 组装 Prompt
         val fullPrompt = buildString {
           append(systemPrompt)
           if (memoryContext.isNotEmpty()) {
-            append("\n\n--- 最近的对话 ---\n")
+            append("\n\n")
             append(memoryContext)
             append("\n--- 当前对话 ---\n")
           }
