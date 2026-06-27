@@ -8,6 +8,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
+import java.nio.LongBuffer
 
 /**
  * Kokoro-TTS 端侧语音合成引擎 — ONNX Runtime 推理。
@@ -52,7 +54,7 @@ class KokoroTtsEngine(
 
         val options = OrtSession.SessionOptions().apply {
           addNnapi()
-          setSessionOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+          setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
 
         // 从 assets 加载 ONNX 模型
@@ -102,13 +104,13 @@ class KokoroTtsEngine(
       val env = ortEnv!!
 
       val inputShape = longArrayOf(1, phonemeIds.size.toLong())
-      val inputTensor = OnnxTensor.createTensor(env, phonemeIds, inputShape)
+      val inputTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(phonemeIds), inputShape)
 
       val styleShape = longArrayOf(1, VOICE_EMBEDDING_DIM.toLong())
-      val styleTensor = OnnxTensor.createTensor(env, voiceEmbedding, styleShape)
+      val styleTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(voiceEmbedding), styleShape)
 
       val speedTensor = OnnxTensor.createTensor(
-        env, floatArrayOf(speed.coerceIn(0.5f, 2.0f)), longArrayOf(1)
+        env, FloatBuffer.wrap(floatArrayOf(speed.coerceIn(0.5f, 2.0f))), longArrayOf(1)
       )
 
       val inputs = mapOf(

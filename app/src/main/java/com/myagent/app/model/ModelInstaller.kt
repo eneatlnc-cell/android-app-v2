@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -100,7 +101,7 @@ class ModelInstaller(private val context: Context) {
       val existingBytes = modelFile.length()
       downloadFile(DOWNLOAD_URL, modelFile, existingBytes, totalSize) { downloaded, speed ->
         val pct = if (totalSize > 0) (downloaded * 100 / totalSize).toInt().coerceIn(0, 100) else 0
-        emit(ModelDownloadState.Downloading(pct, downloaded, totalSize, speed))
+        runBlocking { emit(ModelDownloadState.Downloading(pct, downloaded, totalSize, speed)) }
       }
 
       // —— 第 3 步：校验 ——
