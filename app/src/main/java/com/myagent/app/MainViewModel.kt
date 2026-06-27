@@ -6,6 +6,7 @@ import com.myagent.app.model.ModelDownloadState
 import com.myagent.app.model.PersonaType
 import com.myagent.app.multimodal.VideoConfig
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +47,11 @@ class MainViewModel(
     if (runtimeRef.value != null || runtimeStartupQueued) return
     runtimeStartupQueued = true
     viewModelScope.launch(Dispatchers.Default) {
-      runCatching { ensureRuntime() }
+      try {
+        ensureRuntime()
+      } catch (e: Exception) {
+        Log.e("MainViewModel", "Runtime startup failed", e)
+      }
       runtimeStartupQueued = false
     }
   }
@@ -104,16 +109,26 @@ class MainViewModel(
 
   // --- 模型下载操作 ---
   fun startModelDownload() {
-    ensureRuntime().startModelDownload()
+    downloadJob?.cancel()
+    downloadJob = viewModelScope.launch(Dispatchers.Default) {
+      ensureRuntime().startModelDownload()
+    }
   }
 
   fun skipModelDownload() {
-    ensureRuntime().skipModelDownload()
+    viewModelScope.launch(Dispatchers.Default) {
+      ensureRuntime().skipModelDownload()
+    }
   }
 
   fun resetModelDownload() {
-    ensureRuntime().resetAndStartDownload()
+    downloadJob?.cancel()
+    downloadJob = viewModelScope.launch(Dispatchers.Default) {
+      ensureRuntime().resetAndStartDownload()
+    }
   }
+
+  private var downloadJob: kotlinx.coroutines.Job? = null
 
   // --- 聊天操作 ---
   fun sendChat(message: String, attachments: List<OutgoingAttachment> = emptyList()) {

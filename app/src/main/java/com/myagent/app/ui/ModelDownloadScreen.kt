@@ -131,9 +131,16 @@ fun ModelDownloadScreen(
           )
           Spacer(modifier = Modifier.height(8.dp))
           Text(
-            text = "首次使用需要下载 AI 模型（约 200MB）",
+            text = "首次使用需要下载 AI 模型（约 3.7 GB）",
             fontSize = 14.sp,
             color = Color(0xFFA8E6CF).copy(alpha = 0.6f),
+            textAlign = TextAlign.Center,
+          )
+          Spacer(modifier = Modifier.height(4.dp))
+          Text(
+            text = "Gemma 4 E4B · LiteRT-LM 格式",
+            fontSize = 12.sp,
+            color = Color(0xFFA8E6CF).copy(alpha = 0.4f),
             textAlign = TextAlign.Center,
           )
 
