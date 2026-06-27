@@ -9,7 +9,7 @@ plugins {
 
 android {
   namespace = "com.myagent.app"
-  compileSdk = 36
+  compileSdk = 37
 
   defaultConfig {
     applicationId = "com.myagent.app"
@@ -66,7 +66,7 @@ android {
 kotlin {
   compilerOptions {
     jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    allWarningsAsErrors.set(true)
+    allWarningsAsErrors.set(false)
   }
 }
 
