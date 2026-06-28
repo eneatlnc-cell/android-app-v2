@@ -1,11 +1,14 @@
 package com.myagent.app.model
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -92,9 +95,26 @@ class ModelInstaller(private val context: Context) {
 
       // —— 第 2 步：下载 ——
       val existingBytes = modelFile.length()
-      downloadFile(DOWNLOAD_URL, modelFile, existingBytes, totalSize) { downloaded, speed ->
-        val pct = if (totalSize > 0) (downloaded * 100 / totalSize).toInt().coerceIn(0, 100) else 0
-        runBlocking { emit(ModelDownloadState.Downloading(pct, downloaded, totalSize, speed)) }
+
+      // Channel 桥接：downloadFile 的回调是普通 lambda，无法直接调用 suspend 的 emit。
+      // 通过 channel 把回调数据 push 到协程侧，再由协程 collect 后 emit 到 Flow。
+      coroutineScope {
+        val progressChannel = Channel<Pair<Long, Long>>(Channel.CONFLATED)
+
+        val downloadJob = launch(Dispatchers.IO) {
+          try {
+            downloadFile(DOWNLOAD_URL, modelFile, existingBytes, totalSize) { downloaded, speed ->
+              progressChannel.trySend(downloaded to speed)
+            }
+          } finally {
+            progressChannel.close()
+          }
+        }
+
+        for ((downloaded, speed) in progressChannel) {
+          val pct = if (totalSize > 0) (downloaded * 100 / totalSize).toInt().coerceIn(0, 100) else 0
+          emit(ModelDownloadState.Downloading(pct, downloaded, totalSize, speed))
+        }
       }
 
       // —— 第 3 步：校验 ——
@@ -106,6 +126,8 @@ class ModelInstaller(private val context: Context) {
       }
 
       emit(ModelDownloadState.Completed)
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: IOException) {
       // 网络错误，保留已下载部分供下次续传
       emit(ModelDownloadState.Failed("下载中断：${e.message ?: "网络错误"}，已下载部分已保留"))
