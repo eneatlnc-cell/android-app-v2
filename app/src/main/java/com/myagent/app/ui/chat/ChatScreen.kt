@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
@@ -42,7 +46,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 聊天页面 — 消息列表 + 输入框 + 流式响应。
+ * 聊天页面 — 多模态对话：文本 + 图片 + 语音。
+ *
+ * 输入框支持：
+ * - 文本输入
+ * - 语音入口（按钮，逻辑待实现）
+ * - 图片入口（按钮，逻辑待实现）
+ *
+ * 消息气泡支持：
+ * - 文字消息
+ * - 图片消息（显示缩略图占位符）
+ * - 语音消息（显示播放按钮 + 时长）
  */
 @Composable
 fun ChatScreen(
@@ -71,7 +85,7 @@ fun ChatScreen(
       modifier = Modifier
         .weight(1f)
         .fillMaxWidth(),
-      contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       if (messages.isEmpty() && !isLoading) {
@@ -83,7 +97,7 @@ fun ChatScreen(
             contentAlignment = Alignment.Center,
           ) {
             Text(
-              text = "开始和灵机聊天吧！",
+              text = "开始和灵机聊天吧！\n支持文字、图片、语音",
               color = MaterialTheme.colorScheme.onSurfaceVariant,
               fontSize = 16.sp,
             )
@@ -132,13 +146,44 @@ fun ChatScreen(
       }
     }
 
-    // 输入区域
+    // 输入区域 — 多模态入口
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp),
+        .padding(horizontal = 8.dp, vertical = 6.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
+      // 语音入口
+      IconButton(
+        onClick = {
+          // TODO: 启动语音录制（步骤5逻辑占位）
+        },
+        modifier = Modifier.size(44.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Default.Mic,
+          contentDescription = "语音输入",
+          tint = if (isLoading) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+          else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+
+      // 图片入口
+      IconButton(
+        onClick = {
+          // TODO: 打开图片选择器（步骤5逻辑占位）
+        },
+        modifier = Modifier.size(44.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Default.Image,
+          contentDescription = "图片输入",
+          tint = if (isLoading) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+          else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+
+      // 文本输入
       OutlinedTextField(
         value = inputText,
         onValueChange = { inputText = it },
@@ -148,7 +193,7 @@ fun ChatScreen(
         shape = RoundedCornerShape(24.dp),
       )
 
-      Spacer(modifier = Modifier.width(8.dp))
+      Spacer(modifier = Modifier.width(4.dp))
 
       if (isLoading) {
         IconButton(onClick = { viewModel.abortChat() }) {
@@ -179,6 +224,9 @@ fun ChatScreen(
   }
 }
 
+/**
+ * 多模态消息气泡 — 支持文字、图片、语音。
+ */
 @Composable
 private fun MessageBubble(message: ChatMessage) {
   val isUser = message.role == "user"
@@ -204,13 +252,78 @@ private fun MessageBubble(message: ChatMessage) {
         )
         .padding(12.dp),
     ) {
-      if (message.content.isNotEmpty()) {
-        Text(
-          text = message.content,
-          color = if (isUser) MaterialTheme.colorScheme.onPrimary
-          else MaterialTheme.colorScheme.onSurface,
-          fontSize = 15.sp,
-        )
+      when (message.type) {
+        "image" -> {
+          // 图片消息 — 占位缩略图区域
+          Box(
+            modifier = Modifier
+              .width(200.dp)
+              .height(150.dp)
+              .clip(RoundedCornerShape(8.dp))
+              .background(
+                if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+              ),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Default.Image,
+              contentDescription = "图片",
+              tint = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
+              else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+              modifier = Modifier.size(40.dp),
+            )
+          }
+          if (message.content.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = message.content,
+              color = if (isUser) MaterialTheme.colorScheme.onPrimary
+              else MaterialTheme.colorScheme.onSurface,
+              fontSize = 13.sp,
+            )
+          }
+        }
+        "voice" -> {
+          // 语音消息 — 播放按钮 + 时长
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+              imageVector = Icons.Default.PlayArrow,
+              contentDescription = "播放",
+              tint = if (isUser) MaterialTheme.colorScheme.onPrimary
+              else MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = if (message.content.isNotEmpty()) message.content else "语音消息",
+              color = if (isUser) MaterialTheme.colorScheme.onPrimary
+              else MaterialTheme.colorScheme.onSurface,
+              fontSize = 14.sp,
+            )
+          }
+        }
+        else -> {
+          // 纯文字消息
+          if (message.content.isNotEmpty()) {
+            Text(
+              text = message.content,
+              color = if (isUser) MaterialTheme.colorScheme.onPrimary
+              else MaterialTheme.colorScheme.onSurface,
+              fontSize = 15.sp,
+            )
+          }
+          // 如果有附件但类型是 text/mixed，显示附件指示器
+          if (message.attachmentUri != null) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = "[附件]",
+              color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
+              else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+              fontSize = 12.sp,
+            )
+          }
+        }
       }
     }
   }

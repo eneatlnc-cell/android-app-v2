@@ -1,15 +1,21 @@
 package com.myagent.app.chat
 
-import java.util.UUID
-
 /**
- * 聊天消息数据模型
+ * 聊天消息数据模型。
+ *
+ * 支持多模态内容：
+ * - type: "text" | "image" | "voice" | "mixed"
+ * - attachmentUri: 附件本地路径（图片/语音文件）
+ * - attachmentMimeType: 附件 MIME 类型
  */
 data class ChatMessage(
   val id: String,
   val role: String, // "user" 或 "assistant"
   val content: String,
   val timestampMs: Long = System.currentTimeMillis(),
+  val type: String = "text",
+  val attachmentUri: String? = null,
+  val attachmentMimeType: String? = null,
 )
 
 /**
