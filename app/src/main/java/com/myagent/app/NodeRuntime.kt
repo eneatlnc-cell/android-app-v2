@@ -40,7 +40,7 @@ class NodeRuntime(
   // 模型安装器
   val modelInstaller = ModelInstaller(app)
 
-  // 本地模型加载器（Mock 模式：modelPath 为 null 时自动降级）
+  // 本地模型加载器 — 模型下载完成后才初始化推理引擎
   val modelLoader: LocalModelLoader = run {
     val modelFile = modelInstaller.getModelPath()
     val path = if (modelInstaller.isModelReady()) modelFile.absolutePath else null

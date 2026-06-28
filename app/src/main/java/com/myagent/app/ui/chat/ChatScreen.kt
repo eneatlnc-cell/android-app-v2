@@ -3,6 +3,8 @@ package com.myagent.app.ui.chat
 import com.myagent.app.MainViewModel
 import com.myagent.app.chat.ChatMessage
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +43,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,15 +53,9 @@ import androidx.compose.ui.unit.sp
 /**
  * 聊天页面 — 多模态对话：文本 + 图片 + 语音。
  *
- * 输入框支持：
- * - 文本输入
- * - 语音入口（按钮，逻辑待实现）
- * - 图片入口（按钮，逻辑待实现）
- *
- * 消息气泡支持：
- * - 文字消息
- * - 图片消息（显示缩略图占位符）
- * - 语音消息（显示播放按钮 + 时长）
+ * 交互：
+ * - 点击空白区域收起键盘
+ * - 发送消息后自动收起键盘
  */
 @Composable
 fun ChatScreen(
@@ -70,6 +69,8 @@ fun ChatScreen(
 
   var inputText by remember { mutableStateOf("") }
   val listState = rememberLazyListState()
+  val focusManager = LocalFocusManager.current
+  val keyboardController = LocalSoftwareKeyboardController.current
 
   // 自动滚动到最新消息
   LaunchedEffect(messages.size, streamingText) {
@@ -78,7 +79,17 @@ fun ChatScreen(
     }
   }
 
-  Column(modifier = modifier) {
+  // 点击空白区域收起键盘
+  Column(
+    modifier = modifier
+      .clickable(
+        indication = null,
+        interactionSource = remember { MutableInteractionSource() },
+      ) {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+      }
+  ) {
     // 消息列表
     LazyColumn(
       state = listState,
@@ -210,6 +221,9 @@ fun ChatScreen(
             if (text.isNotEmpty()) {
               viewModel.sendChat(text)
               inputText = ""
+              // 发送后收起键盘
+              focusManager.clearFocus()
+              keyboardController?.hide()
             }
           },
         ) {
@@ -254,7 +268,6 @@ private fun MessageBubble(message: ChatMessage) {
     ) {
       when (message.type) {
         "image" -> {
-          // 图片消息 — 占位缩略图区域
           Box(
             modifier = Modifier
               .width(200.dp)
@@ -285,7 +298,6 @@ private fun MessageBubble(message: ChatMessage) {
           }
         }
         "voice" -> {
-          // 语音消息 — 播放按钮 + 时长
           Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
               imageVector = Icons.Default.PlayArrow,
@@ -304,7 +316,6 @@ private fun MessageBubble(message: ChatMessage) {
           }
         }
         else -> {
-          // 纯文字消息
           if (message.content.isNotEmpty()) {
             Text(
               text = message.content,
@@ -313,7 +324,6 @@ private fun MessageBubble(message: ChatMessage) {
               fontSize = 15.sp,
             )
           }
-          // 如果有附件但类型是 text/mixed，显示附件指示器
           if (message.attachmentUri != null) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(

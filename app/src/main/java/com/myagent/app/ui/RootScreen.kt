@@ -1,6 +1,7 @@
 package com.myagent.app.ui
 
 import com.myagent.app.MainViewModel
+import com.myagent.app.model.ModelDownloadState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -10,11 +11,17 @@ import androidx.compose.ui.Modifier
 /**
  * 根路由 — 5 步闭环流程：
  * 1. 激活检查 → 2. 模型下载 → 3. 校验 → 4. 人格选择 → 5. 对话
+ *
+ * 严格拦截：模型未下载完成，即使 onboarding 标记为完成也不允许进入主界面。
  */
 @Composable
 fun RootScreen(viewModel: MainViewModel) {
   val isActivated by viewModel.isActivated.collectAsState()
   val onboardingCompleted by viewModel.onboardingCompleted.collectAsState()
+  val downloadState by viewModel.downloadState.collectAsState()
+
+  // 模型必须下载完成才能进入主界面
+  val modelReady = downloadState is ModelDownloadState.Completed
 
   when {
     // 步骤1：未激活 → 激活页
@@ -24,11 +31,11 @@ fun RootScreen(viewModel: MainViewModel) {
         modifier = Modifier.fillMaxSize(),
       )
     }
-    // 步骤2-4：未完成引导 → 引导流程
-    !onboardingCompleted -> {
+    // 步骤2-4：未完成引导 或 模型未就绪 → 引导流程
+    !onboardingCompleted || !modelReady -> {
       OnboardingFlow(viewModel = viewModel, modifier = Modifier.fillMaxSize())
     }
-    // 步骤5：已完成引导 → 主界面
+    // 步骤5：已完成引导 + 模型就绪 → 主界面
     else -> {
       ShellScreen(viewModel = viewModel, modifier = Modifier.fillMaxSize())
     }

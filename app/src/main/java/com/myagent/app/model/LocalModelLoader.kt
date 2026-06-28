@@ -7,17 +7,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * 本地模型加载器 — 优先使用 LiteRT-LM 真实推理，模型不可用时降级为 Mock。
+ * 本地模型加载器 — 使用 LiteRT-LM 真实推理，模型必须下载完成后才能使用。
  *
  * v2.0：LiteRT-LM 替代 llama.cpp，纯 Kotlin 实现，无需 JNI/NDK。
+ * v2.1：移除 Mock 降级，模型未就绪时拒绝推理。
  */
 class LocalModelLoader(
   private val context: Context,
@@ -25,18 +24,18 @@ class LocalModelLoader(
 ) {
   companion object {
     private const val TAG = "LocalModelLoader"
-    private const val INFERENCE_TIMEOUT_MS = 120_000L // LiteRT-LM 首次推理较慢，放宽到 120s
+    private const val INFERENCE_TIMEOUT_MS = 120_000L
   }
 
   private val engine = LiteRtEngine(context)
   @Volatile private var initialized = false
 
   /**
-   * 初始化引擎。如果 modelPath 为 null 则跳过（降级 Mock）。
+   * 初始化引擎。modelPath 为 null 时跳过，等待下载完成后 reload。
    */
   fun init() {
     if (modelPath == null) {
-      Log.i(TAG, "No model available, using Mock mode")
+      Log.i(TAG, "Model not yet downloaded, waiting for download")
       return
     }
     doInitialize(modelPath!!)
@@ -53,29 +52,29 @@ class LocalModelLoader(
   private fun doInitialize(path: String) {
     try {
       if (!engine.init(path)) {
-        Log.e(TAG, "Engine init failed, falling back to Mock")
+        Log.e(TAG, "Engine init failed")
         return
       }
       initialized = true
       Log.i(TAG, "LiteRT-LM engine ready: $path")
     } catch (e: CancellationException) {
-          // 协程被取消，重新抛出，不记录为错误
-          throw e
-        } catch (e: Exception) {
-      Log.e(TAG, "Engine init failed: ${e.message}, falling back to Mock")
+      throw e
+    } catch (e: Exception) {
+      Log.e(TAG, "Engine init failed: ${e.message}")
       initialized = false
     }
   }
 
   /**
-   * 流式生成回复。
-   *
-   * 使用 callbackFlow 将 LiteRT-LM 回调桥接到 Flow，
-   * 用 withTimeoutOrNull 在超时后停止收集（不阻塞 UI）。
+   * 流式生成回复。模型未就绪时返回空流。
    */
   fun generate(prompt: String): Flow<String> {
     if (!initialized || modelPath == null) {
-      return mockGenerate(prompt)
+      Log.w(TAG, "Model not ready, cannot generate")
+      return callbackFlow {
+        trySend("模型尚未下载完成，请等待下载结束后再试。")
+        close()
+      }
     }
     return callbackFlow {
       val inferenceScope = CoroutineScope(Dispatchers.IO)
@@ -86,7 +85,6 @@ class LocalModelLoader(
             trySend(chunk)
           }
         } catch (e: CancellationException) {
-          // 协程被取消，重新抛出
           throw e
         } catch (e: Exception) {
           Log.e(TAG, "Inference error: ${e.message}")
@@ -94,7 +92,6 @@ class LocalModelLoader(
         close()
       }
 
-      // 等待推理完成或超时
       val finished = withTimeoutOrNull(INFERENCE_TIMEOUT_MS) {
         inferenceJob.join()
         true
@@ -118,62 +115,6 @@ class LocalModelLoader(
     if (initialized) {
       engine.close()
       initialized = false
-    }
-  }
-
-  // ── Mock 回复 ──
-
-  private fun mockGenerate(prompt: String): Flow<String> = flow {
-    val response = mockResponse(prompt)
-    var i = 0
-    while (i < response.length) {
-      val chunkSize = if (i % 3 == 0) 2 else 1
-      val end = minOf(i + chunkSize, response.length)
-      emit(response.substring(i, end))
-      delay(30)
-      i = end
-    }
-  }
-
-  private fun mockResponse(prompt: String): String {
-    val input = prompt.trim().lowercase()
-
-    return when {
-      input.contains("你好") || input.contains("嗨") || input.contains("hello") || input.contains("hi") ->
-        "嗨宝！今天想聊点啥？我随时在线~ 😎"
-
-      input.contains("名字") || input.contains("你是谁") || input.contains("你叫什么") ->
-        "我叫灵机！你的专属 AI 搭子，24 小时不下线的那种！"
-
-      input.contains("天气") ->
-        "宝，我现在还看不到天气数据，不过你可以看看窗外嘛！要是下雨记得带伞，别淋感冒了~"
-
-      input.contains("谢谢") || input.contains("感谢") || input.contains("thank") ->
-        "跟我客气啥！咱俩谁跟谁啊 😏"
-
-      input.contains("再见") || input.contains("拜拜") || input.contains("bye") ->
-        "拜拜宝！随时找我，我永远在~ 👋"
-
-      input.contains("笑话") || input.contains("搞笑") || input.contains("段子") ->
-        "为什么程序员总是分不清万圣节和圣诞节？因为 Oct 31 == Dec 25！😂"
-
-      input.contains("无聊") || input.contains("没意思") || input.contains("好闲") ->
-        "无聊的时候最适合来找我聊天了！"
-
-      input.contains("emo") || input.contains("难过") || input.contains("不开心") || input.contains("伤心") ->
-        "抱抱！不管发生什么，我都在这里。想吐槽就尽情吐槽，我听着呢 ❤️"
-
-      input.contains("学习") || input.contains("考试") || input.contains("作业") ->
-        "学霸模式启动！哪里卡住了？"
-
-      input.contains("推荐") || input.contains("安利") ->
-        "你想让我推荐哪方面的？音乐、电影、游戏还是学习资料？"
-
-      input.length < 5 ->
-        "嗯？宝你说啥？我没太听清，再说一遍呗~"
-
-      else ->
-        "哈哈哈哈这个有意思！宝你继续说，我听着呢~"
     }
   }
 }

@@ -59,10 +59,11 @@ fun OnboardingFlow(
   val downloadState by viewModel.downloadState.collectAsState()
   val context = LocalContext.current
 
-  // 自动前进：下载完成后跳到人格选择
-  LaunchedEffect(downloadState) {
-    if (downloadState is ModelDownloadState.Completed && step == 1) {
-      step = 2
+  // 下载完成后自动跳到人格选择；未完成则强制回到下载页
+  LaunchedEffect(downloadState, step) {
+    when {
+      downloadState is ModelDownloadState.Completed && step == 1 -> step = 2
+      downloadState !is ModelDownloadState.Completed && step == 2 -> step = 1
     }
   }
 
@@ -76,9 +77,8 @@ fun OnboardingFlow(
         state = downloadState,
         retryCount = viewModel.downloadRetryCount.value,
         onExit = {
-          // 启动 ForegroundService 后台下载，然后退出下载页
+          // 启动 ForegroundService 后台下载，停留在下载页
           DownloadForegroundService.start(context)
-          step = 2 // 临时跳过，等下载完成后真正进入
         },
         onRetry = {
           viewModel.resetModelDownload()
