@@ -18,6 +18,7 @@ class SecurePrefs(context: Context) {
     private const val displayNameKey = "node.displayName"
     private const val appearanceThemeModeKey = "appearance.themeMode"
     private const val onboardingCompletedKey = "onboarding.completed"
+    private const val welcomeCompletedKey = "welcome.completed"
     private const val instanceIdKey = "node.instanceId"
   }
 
@@ -78,6 +79,17 @@ class SecurePrefs(context: Context) {
   fun setOnboardingCompleted(value: Boolean) {
     plainPrefs.edit { putBoolean(onboardingCompletedKey, value) }
     _onboardingCompleted.value = value
+  }
+
+  // --- Welcome ---
+  private val _welcomeCompleted = MutableStateFlow(
+    plainPrefs.getBoolean(welcomeCompletedKey, false),
+  )
+  val welcomeCompleted: StateFlow<Boolean> = _welcomeCompleted
+
+  fun setWelcomeCompleted() {
+    plainPrefs.edit { putBoolean(welcomeCompletedKey, true) }
+    _welcomeCompleted.value = true
   }
 
   // --- Secure Storage ---

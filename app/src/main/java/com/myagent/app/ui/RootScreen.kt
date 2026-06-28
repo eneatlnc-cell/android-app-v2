@@ -10,28 +10,35 @@ import androidx.compose.ui.Modifier
 
 /**
  * 根路由 — 5 步闭环流程：
- * 1. 激活检查 → 2. 模型下载 → 3. 校验 → 4. 人格选择 → 5. 对话
+ * 1. 欢迎页 → 2. 激活 → 3. 模型下载 → 4. 人格选择 → 5. 对话
  *
  * 严格拦截：模型未下载完成，即使 onboarding 标记为完成也不允许进入主界面。
  */
 @Composable
 fun RootScreen(viewModel: MainViewModel) {
+  val welcomeDone by viewModel.welcomeCompleted.collectAsState()
   val isActivated by viewModel.isActivated.collectAsState()
   val onboardingCompleted by viewModel.onboardingCompleted.collectAsState()
   val downloadState by viewModel.downloadState.collectAsState()
 
-  // 模型必须下载完成才能进入主界面
   val modelReady = downloadState is ModelDownloadState.Completed
 
   when {
-    // 步骤1：未激活 → 激活页
+    // 步骤1：欢迎页
+    !welcomeDone -> {
+      WelcomeScreen(
+        onStart = { viewModel.setWelcomeCompleted() },
+        modifier = Modifier.fillMaxSize(),
+      )
+    }
+    // 步骤2：未激活 → 激活页
     !isActivated -> {
       ActivationScreen(
         onActivate = { code -> viewModel.activate(code) },
         modifier = Modifier.fillMaxSize(),
       )
     }
-    // 步骤2-4：未完成引导 或 模型未就绪 → 引导流程
+    // 步骤3-4：未完成引导 或 模型未就绪 → 引导流程
     !onboardingCompleted || !modelReady -> {
       OnboardingFlow(viewModel = viewModel, modifier = Modifier.fillMaxSize())
     }

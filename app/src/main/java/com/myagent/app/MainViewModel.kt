@@ -84,6 +84,11 @@ class MainViewModel(
 
   // --- 偏好 ---
   val onboardingCompleted: StateFlow<Boolean> = prefs.onboardingCompleted
+  val welcomeCompleted: StateFlow<Boolean> = prefs.welcomeCompleted
+
+  fun setWelcomeCompleted() {
+    prefs.setWelcomeCompleted()
+  }
 
   // --- 激活 ---
   private val _isActivated = MutableStateFlow(activationManager.isActivated())

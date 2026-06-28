@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,7 +21,6 @@ import androidx.compose.material.icons.filled.Mood
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -40,15 +38,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 首次使用引导流程 — 欢迎页 → 模型下载（强制） → 人格选择。
+ * 引导流程 — 模型下载（强制） → 人格选择。
  *
- * 模型下载强制完成，不支持 Mock 跳过。
- * 退出下载页时启动 ForegroundService 后台下载。
+ * 注意：欢迎页已移至 RootScreen 作为第一步。
+ * 模型下载强制完成，退出下载页时启动 ForegroundService 后台下载。
  */
 @Composable
 fun OnboardingFlow(
@@ -62,73 +59,29 @@ fun OnboardingFlow(
   // 下载完成后自动跳到人格选择；未完成则强制回到下载页
   LaunchedEffect(downloadState, step) {
     when {
-      downloadState is ModelDownloadState.Completed && step == 1 -> step = 2
-      downloadState !is ModelDownloadState.Completed && step == 2 -> step = 1
+      downloadState is ModelDownloadState.Completed && step == 0 -> step = 1
+      downloadState !is ModelDownloadState.Completed && step == 1 -> step = 0
     }
   }
 
   Surface(modifier = modifier) {
     when (step) {
-      0 -> WelcomeStep(onNext = {
-        viewModel.startModelDownload()
-        step = 1
-      })
-      1 -> ModelDownloadStep(
+      0 -> ModelDownloadStep(
         state = downloadState,
         retryCount = viewModel.downloadRetryCount.value,
         onExit = {
-          // 启动 ForegroundService 后台下载，停留在下载页
           DownloadForegroundService.start(context)
         },
         onRetry = {
           viewModel.resetModelDownload()
         },
       )
-      2 -> PersonaStep(
+      1 -> PersonaStep(
         onSelect = { persona ->
           viewModel.lockPersona(persona)
           viewModel.setOnboardingCompleted(true)
         },
       )
-    }
-  }
-}
-
-@Composable
-private fun WelcomeStep(onNext: () -> Unit) {
-  Column(
-    modifier = Modifier
-      .fillMaxSize()
-      .padding(32.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
-  ) {
-    Icon(
-      imageVector = Icons.Default.AutoAwesome,
-      contentDescription = null,
-      modifier = Modifier.size(80.dp),
-      tint = Color(0xFF6C5CE7),
-    )
-    Spacer(modifier = Modifier.height(24.dp))
-    Text(
-      text = "欢迎来到灵机",
-      fontSize = 28.sp,
-      fontWeight = FontWeight.Bold,
-      textAlign = TextAlign.Center,
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-      text = "你的 AI 搭子，永远在线",
-      fontSize = 16.sp,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      textAlign = TextAlign.Center,
-    )
-    Spacer(modifier = Modifier.height(48.dp))
-    Button(
-      onClick = onNext,
-      modifier = Modifier.fillMaxWidth(),
-    ) {
-      Text("开始使用")
     }
   }
 }
@@ -152,7 +105,7 @@ private fun ModelDownloadStep(
 private fun PersonaStep(onSelect: (PersonaType) -> Unit) {
   Column(
     modifier = Modifier
-      .fillMaxSize()
+      .fillMaxWidth()
       .padding(horizontal = 24.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center,
@@ -161,14 +114,12 @@ private fun PersonaStep(onSelect: (PersonaType) -> Unit) {
       text = "选择 AI 人格",
       fontSize = 26.sp,
       fontWeight = FontWeight.Bold,
-      textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(6.dp))
     Text(
       text = "选一个你喜欢的搭子风格",
       fontSize = 14.sp,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
-      textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(28.dp))
 
