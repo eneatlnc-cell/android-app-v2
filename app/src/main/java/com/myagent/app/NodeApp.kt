@@ -2,16 +2,18 @@ package com.myagent.app
 
 import android.app.Application
 import android.os.StrictMode
+import com.myagent.app.activation.ActivationManager
 import com.myagent.app.memory.MemoryManager
 import com.myagent.app.model.PersonaManager
 
 /**
- * Android Application 单例 — 持有全局 SecurePrefs、MemoryManager、PersonaManager。
+ * Android Application 单例 — 持有全局 SecurePrefs、MemoryManager、PersonaManager、ActivationManager。
  */
 class NodeApp : Application() {
   val prefs: SecurePrefs by lazy { SecurePrefs(this) }
   val memoryManager: MemoryManager by lazy { MemoryManager(this) }
   val personaManager: PersonaManager by lazy { PersonaManager(this) }
+  val activationManager: ActivationManager by lazy { ActivationManager(this) }
 
   @Volatile private var runtimeInstance: NodeRuntime? = null
 

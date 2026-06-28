@@ -1,5 +1,6 @@
 package com.myagent.app
 
+import com.myagent.app.activation.ActivationManager
 import com.myagent.app.chat.ChatMessage
 import com.myagent.app.chat.OutgoingAttachment
 import com.myagent.app.model.ModelDownloadState
@@ -30,6 +31,7 @@ class MainViewModel(
 ) : AndroidViewModel(app) {
   private val nodeApp = app as NodeApp
   private val prefs = nodeApp.prefs
+  private val activationManager = nodeApp.activationManager
 
   private val runtimeRef = MutableStateFlow<NodeRuntime?>(null)
   @Volatile private var foreground = false
@@ -81,6 +83,18 @@ class MainViewModel(
 
   // --- 偏好 ---
   val onboardingCompleted: StateFlow<Boolean> = prefs.onboardingCompleted
+
+  // --- 激活 ---
+  private val _isActivated = MutableStateFlow(activationManager.isActivated())
+  val isActivated: StateFlow<Boolean> = _isActivated.asStateFlow()
+
+  fun activate(code: String): Boolean {
+    val success = activationManager.activate(code)
+    if (success) {
+      _isActivated.value = true
+    }
+    return success
+  }
 
   // --- 视频画质 ---
   val videoConfig: StateFlow<VideoConfig> = runtimeState(VideoConfig.LOW) { it.videoConfig }
