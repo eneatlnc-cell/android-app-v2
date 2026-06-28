@@ -197,7 +197,7 @@ class DownloadForegroundService : Service() {
     return NotificationCompat.Builder(this, CHANNEL_ID)
       .setContentTitle(title)
       .setContentText(content)
-      .setSmallIcon(android.R.drawable.ic_download)
+      .setSmallIcon(android.R.drawable.stat_sys_download)
       .setOngoing(ongoing)
       .setContentIntent(openIntent)
       .setProgress(if (indeterminate) 0 else maxProgress, if (indeterminate) 0 else progress, indeterminate)
