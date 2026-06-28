@@ -20,7 +20,7 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * 模型安装器 — 从阿里云 OSS 下载 .litertlm 模型到内部存储，支持断点续传和 SHA256 校验。
+ * 模型安装器 — 从阿里云 OSS 下载 .litertlm 模型到外部存储，支持断点续传和 SHA256 校验。
  *
  * v2.0：端侧推理模型（~3.66 GB），.litertlm 格式，LiteRT-LM 引擎。
  *
@@ -28,7 +28,8 @@ import java.security.MessageDigest
  * - 从阿里云 OSS 下载（国内高速，稳定可靠）
  * - 支持 HTTP Range 断点续传
  * - 下载完成后 SHA256 校验
- * - 模型不存在或校验失败时自动降级为 Mock
+ * - 模型文件存储在外部存储（getExternalFilesDir），清除数据/缓存不会删除
+ * - 自动从旧内部存储路径迁移已有模型文件
  */
 class ModelInstaller(private val context: Context) {
   companion object {
@@ -47,9 +48,39 @@ class ModelInstaller(private val context: Context) {
   }
 
   /**
-   * 获取模型文件的内部存储路径
+   * 获取模型文件的存储路径（外部存储，清除数据后不会删除）。
+   *
+   * 优先使用 getExternalFilesDir（Android 4.4+ 无需权限，清除数据不会删除），
+   * 若外部存储不可用则回退到内部 filesDir。
+   *
+   * 首次调用时自动从旧内部存储路径迁移已有模型文件。
    */
-  fun getModelPath(): File = File(context.filesDir, "models/$MODEL_FILE_NAME")
+  fun getModelPath(): File {
+    val appContext = context.applicationContext
+    val externalDir = appContext.getExternalFilesDir(null)
+    val targetFile = if (externalDir != null) {
+      File(externalDir, "models/$MODEL_FILE_NAME")
+    } else {
+      File(appContext.filesDir, "models/$MODEL_FILE_NAME")
+    }
+
+    // 自动迁移：如果内部存储有旧模型文件，移动到外部存储
+    if (externalDir != null) {
+      val legacyFile = File(appContext.filesDir, "models/$MODEL_FILE_NAME")
+      if (legacyFile.exists() && legacyFile.length() > 0 && !targetFile.exists()) {
+        targetFile.parentFile?.mkdirs()
+        try {
+          legacyFile.copyTo(targetFile)
+          legacyFile.delete()
+        } catch (_: Exception) {
+          // 迁移失败则继续使用旧路径
+          return legacyFile
+        }
+      }
+    }
+
+    return targetFile
+  }
 
   /**
    * 检查模型是否已安装且 SHA256 校验通过。
