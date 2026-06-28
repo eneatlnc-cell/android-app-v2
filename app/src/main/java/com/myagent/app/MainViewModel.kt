@@ -122,21 +122,20 @@ class MainViewModel(
   }
 
   // --- 模型下载操作 ---
+  private val _downloadRetryCount = MutableStateFlow(0)
+  val downloadRetryCount: StateFlow<Int> = _downloadRetryCount.asStateFlow()
+
   fun startModelDownload() {
     downloadJob?.cancel()
+    _downloadRetryCount.value = 0
     downloadJob = viewModelScope.launch(Dispatchers.Default) {
       ensureRuntime().startModelDownload()
     }
   }
 
-  fun skipModelDownload() {
-    viewModelScope.launch(Dispatchers.Default) {
-      ensureRuntime().skipModelDownload()
-    }
-  }
-
   fun resetModelDownload() {
     downloadJob?.cancel()
+    _downloadRetryCount.value = _downloadRetryCount.value + 1
     downloadJob = viewModelScope.launch(Dispatchers.Default) {
       ensureRuntime().resetAndStartDownload()
     }

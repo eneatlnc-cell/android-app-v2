@@ -84,12 +84,6 @@ class NodeRuntime(
     }
   }
 
-  fun skipModelDownload() {
-    downloadJob?.cancel()
-    downloadJob = null
-    _downloadState.value = ModelDownloadState.Completed
-  }
-
   fun resetAndStartDownload() {
     downloadJob?.cancel()
     downloadJob = null

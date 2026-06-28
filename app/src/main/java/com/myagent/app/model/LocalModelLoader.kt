@@ -103,7 +103,7 @@ class LocalModelLoader(
       if (finished != true) {
         inferenceScope.cancel()
         Log.e(TAG, "Inference timed out after ${INFERENCE_TIMEOUT_MS}ms")
-        trySend("抱歉，模型推理超时了。可能是手机内存不足，请尝试：\n1. 重启 App\n2. 在设置中切换到 Mock 模式")
+        trySend("抱歉，模型推理超时了。可能是手机内存不足，请尝试重启 App")
         initialized = false
         close()
       }

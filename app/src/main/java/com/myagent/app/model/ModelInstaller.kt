@@ -1,14 +1,18 @@
 package com.myagent.app.model
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -45,6 +49,8 @@ class ModelInstaller(private val context: Context) {
     private const val BUFFER_SIZE = 8192
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val READ_TIMEOUT_MS = 60_000 // 大文件下载需要更长的超时
+    const val MAX_RETRIES = 3 // 最大重试次数
+    private const val RETRY_DELAY_MS = 2000L // 重试前等待
   }
 
   /**
@@ -169,6 +175,112 @@ class ModelInstaller(private val context: Context) {
       emit(ModelDownloadState.Failed("下载中断：${e.message ?: "网络错误"}，已下载部分已保留"))
     } catch (e: Exception) {
       emit(ModelDownloadState.Failed("下载失败：${e.message ?: "未知错误"}"))
+    }
+  }.flowOn(Dispatchers.IO)
+
+  /**
+   * 内部下载方法（不含 flowOn），供 ForegroundService 直接调用。
+   * 调用方需自行管理协程上下文。
+   */
+  internal fun downloadModelInternal(): Flow<ModelDownloadState> = flow {
+    val modelFile = getModelPath()
+    modelFile.parentFile?.mkdirs()
+
+    // 已存在且校验通过
+    if (modelFile.exists() && modelFile.length() > 0 && isModelReady()) {
+      emit(ModelDownloadState.Completed)
+      return@flow
+    }
+
+    if (modelFile.exists() && modelFile.length() == 0L) {
+      modelFile.delete()
+    }
+
+    emit(ModelDownloadState.Downloading(0, 0, 0, 0))
+
+    try {
+      val totalSize = fetchContentLength(DOWNLOAD_URL)
+      if (totalSize <= 0) {
+        emit(ModelDownloadState.Failed("无法获取模型文件信息，请检查网络连接"))
+        return@flow
+      }
+
+      val existingBytes = modelFile.length()
+
+      coroutineScope {
+        val progressChannel = Channel<Pair<Long, Long>>(Channel.CONFLATED)
+        val downloadJob = launch(Dispatchers.IO) {
+          withContext(NonCancellable) {
+            try {
+              downloadFile(DOWNLOAD_URL, modelFile, existingBytes, totalSize) { downloaded, speed ->
+                progressChannel.trySend(downloaded to speed)
+              }
+            } finally {
+              progressChannel.close()
+            }
+          }
+        }
+        for ((downloaded, speed) in progressChannel) {
+          val pct = if (totalSize > 0) (downloaded * 100 / totalSize).toInt().coerceIn(0, 100) else 0
+          emit(ModelDownloadState.Downloading(pct, downloaded, totalSize, speed))
+        }
+      }
+
+      emit(ModelDownloadState.Verifying)
+      if (!isModelReady()) {
+        modelFile.delete()
+        emit(ModelDownloadState.Failed("模型文件校验失败，请重试"))
+        return@flow
+      }
+
+      emit(ModelDownloadState.Completed)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: IOException) {
+      emit(ModelDownloadState.Failed("下载中断：${e.message ?: "网络错误"}，已下载部分已保留"))
+    } catch (e: Exception) {
+      emit(ModelDownloadState.Failed("下载失败：${e.message ?: "未知错误"}"))
+    }
+  }
+
+  /**
+   * 带自动重试的下载方法。
+   * 最多重试 MAX_RETRIES 次，失败后需要手动重试。
+   */
+  fun downloadModelWithRetry(retryCount: Int = 0): Flow<ModelDownloadState> = flow {
+    var currentRetry = retryCount
+    var lastState: ModelDownloadState = ModelDownloadState.Idle
+
+    while (currentRetry <= MAX_RETRIES) {
+      var downloadSucceeded = false
+
+      downloadModelInternal().collect { state ->
+        lastState = state
+        when (state) {
+          is ModelDownloadState.Completed -> {
+            downloadSucceeded = true
+            emit(state)
+          }
+          is ModelDownloadState.Failed -> {
+            // 暂不 emit，等待重试
+            lastState = state
+          }
+          else -> emit(state)
+        }
+      }
+
+      if (downloadSucceeded) return@flow
+
+      currentRetry++
+      if (currentRetry > MAX_RETRIES) {
+        // 重试耗尽，emit 最终失败状态
+        val errorMsg = (lastState as? ModelDownloadState.Failed)?.error ?: "下载失败"
+        emit(ModelDownloadState.Failed("$errorMsg（已重试 $MAX_RETRIES 次）"))
+        return@flow
+      }
+
+      Log.w("ModelInstaller", "Download attempt $currentRetry failed, retrying in ${RETRY_DELAY_MS}ms...")
+      delay(RETRY_DELAY_MS)
     }
   }.flowOn(Dispatchers.IO)
 

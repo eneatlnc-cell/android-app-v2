@@ -1,6 +1,7 @@
 package com.myagent.app.ui
 
 import com.myagent.app.MainViewModel
+import com.myagent.app.model.DownloadForegroundService
 import com.myagent.app.model.ModelDownloadState
 import com.myagent.app.model.PersonaType
 import androidx.compose.foundation.layout.Arrangement
@@ -37,13 +38,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 首次使用引导流程 — 欢迎页 → 模型下载 → 人格选择。
+ * 首次使用引导流程 — 欢迎页 → 模型下载（强制） → 人格选择。
+ *
+ * 模型下载强制完成，不支持 Mock 跳过。
+ * 退出下载页时启动 ForegroundService 后台下载。
  */
 @Composable
 fun OnboardingFlow(
@@ -52,6 +57,7 @@ fun OnboardingFlow(
 ) {
   var step by rememberSaveable { mutableIntStateOf(0) }
   val downloadState by viewModel.downloadState.collectAsState()
+  val context = LocalContext.current
 
   // 自动前进：下载完成后跳到人格选择
   LaunchedEffect(downloadState) {
@@ -68,12 +74,14 @@ fun OnboardingFlow(
       })
       1 -> ModelDownloadStep(
         state = downloadState,
-        onSkip = {
-          viewModel.skipModelDownload()
-          step = 2
+        retryCount = viewModel.downloadRetryCount.value,
+        onExit = {
+          // 启动 ForegroundService 后台下载，然后退出下载页
+          DownloadForegroundService.start(context)
+          step = 2 // 临时跳过，等下载完成后真正进入
         },
         onRetry = {
-          viewModel.startModelDownload()
+          viewModel.resetModelDownload()
         },
       )
       2 -> PersonaStep(
@@ -128,13 +136,15 @@ private fun WelcomeStep(onNext: () -> Unit) {
 @Composable
 private fun ModelDownloadStep(
   state: ModelDownloadState,
-  onSkip: () -> Unit,
+  retryCount: Int,
+  onExit: () -> Unit,
   onRetry: () -> Unit,
 ) {
   ModelDownloadScreen(
     state = state,
-    onSkip = onSkip,
+    onExit = onExit,
     onRetry = onRetry,
+    retryCount = retryCount,
   )
 }
 
@@ -236,7 +246,6 @@ private fun PersonaCard(
         .padding(horizontal = 16.dp, vertical = 14.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      // 左侧彩色图标
       Icon(
         imageVector = data.icon,
         contentDescription = null,
@@ -244,7 +253,6 @@ private fun PersonaCard(
         modifier = Modifier.size(36.dp),
       )
       Spacer(modifier = Modifier.width(14.dp))
-      // 中间文字
       Column(modifier = Modifier.weight(1f)) {
         Text(
           text = "${data.emoji} ${data.title}",
@@ -258,13 +266,21 @@ private fun PersonaCard(
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
-      // 右侧箭头
-      Text(
-        text = "›",
-        fontSize = 24.sp,
-        color = data.color.copy(alpha = 0.5f),
-        fontWeight = FontWeight.Light,
-      )
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+          text = "选择",
+          fontSize = 13.sp,
+          color = data.color.copy(alpha = 0.6f),
+          fontWeight = FontWeight.Medium,
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+          text = "›",
+          fontSize = 24.sp,
+          color = data.color.copy(alpha = 0.5f),
+          fontWeight = FontWeight.Light,
+        )
+      }
     }
   }
 }

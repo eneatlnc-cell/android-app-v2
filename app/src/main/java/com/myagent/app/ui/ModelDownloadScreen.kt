@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,13 +31,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,13 +44,20 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * 模型下载进度页 — 引导期间显示，展示下载进度、速度，支持跳过。
+ * 模型下载进度页 — 强制下载，不支持 Mock 跳过。
+ *
+ * 交互：
+ * - 下载中：显示进度 + 速度 + "可退出当前界面，但请勿删除进程"
+ * - 下载失败（< 3次）：自动重试
+ * - 下载失败（3次）：显示错误 + 重试按钮
+ * - 下载完成：自动进入下一步
  */
 @Composable
 fun ModelDownloadScreen(
   state: ModelDownloadState,
-  onSkip: () -> Unit,
+  onExit: () -> Unit,
   onRetry: () -> Unit,
+  retryCount: Int = 0,
   modifier: Modifier = Modifier,
 ) {
   val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -108,7 +111,6 @@ fun ModelDownloadScreen(
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.Center,
     ) {
-      // 脑图标区域
       CircularBrainIcon(
         modifier = Modifier.size(100.dp),
         isActive = state is ModelDownloadState.Downloading || state is ModelDownloadState.Verifying,
@@ -177,7 +179,6 @@ fun ModelDownloadScreen(
               )
             }
           } else {
-            // 等待 HEAD 请求
             LinearProgressIndicator(
               modifier = Modifier
                 .fillMaxWidth()
@@ -195,17 +196,27 @@ fun ModelDownloadScreen(
             )
           }
 
+          if (retryCount > 0) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+              text = "第 $retryCount 次重试中...",
+              fontSize = 12.sp,
+              color = Color(0xFFFFA94D).copy(alpha = 0.7f),
+              textAlign = TextAlign.Center,
+            )
+          }
+
           Spacer(modifier = Modifier.height(32.dp))
 
-          // 跳过按钮
+          // 退出按钮（不中止下载）
           OutlinedButton(
-            onClick = onSkip,
+            onClick = onExit,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.outlinedButtonColors(
               contentColor = Color(0xFFA8E6CF).copy(alpha = 0.6f),
             ),
           ) {
-            Text("跳过，先用 Mock 模式")
+            Text("可退出当前界面，但请勿删除进程")
           }
         }
 
@@ -247,8 +258,10 @@ fun ModelDownloadScreen(
         }
 
         is ModelDownloadState.Failed -> {
+          val isMaxRetries = retryCount >= 3
+
           Text(
-            text = "下载失败",
+            text = if (isMaxRetries) "下载失败，请检查网络后重试" else "下载失败",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFFFF6B6B),
@@ -269,17 +282,7 @@ fun ModelDownloadScreen(
               containerColor = Color(0xFF4ECDC4),
             ),
           ) {
-            Text("重试")
-          }
-          Spacer(modifier = Modifier.height(12.dp))
-          OutlinedButton(
-            onClick = onSkip,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(
-              contentColor = Color(0xFFA8E6CF).copy(alpha = 0.6f),
-            ),
-          ) {
-            Text("跳过，先用 Mock 模式")
+            Text("重新下载")
           }
         }
       }
@@ -311,14 +314,12 @@ private fun CircularBrainIcon(
     val cy = size.height / 2f
     val r = size.width * 0.4f
 
-    // 外圈光晕
     drawCircle(
       color = Color(0xFF4ECDC4).copy(alpha = 0.15f * pulse),
       radius = r * 1.15f,
       center = Offset(cx, cy),
     )
 
-    // 轨道环
     drawCircle(
       color = Color(0xFFA8E6CF).copy(alpha = 0.3f),
       radius = r,
@@ -326,7 +327,6 @@ private fun CircularBrainIcon(
       style = Stroke(width = 1.5f),
     )
 
-    // 内部网状节点
     val nodeCount = 8
     for (i in 0 until nodeCount) {
       val angle = (i.toFloat() / nodeCount) * 2 * PI.toFloat() + Math.toRadians(rotation.toDouble()).toFloat()
@@ -337,7 +337,6 @@ private fun CircularBrainIcon(
         radius = 3f,
         center = Offset(nx, ny),
       )
-      // 连线到圆心
       drawLine(
         color = Color(0xFFA8E6CF).copy(alpha = 0.2f),
         start = Offset(cx, cy),
@@ -346,7 +345,6 @@ private fun CircularBrainIcon(
       )
     }
 
-    // 中心点
     drawCircle(
       color = Color(0xFF4ECDC4).copy(alpha = if (isActive) pulse else 0.5f),
       radius = 6f,
