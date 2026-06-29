@@ -2,6 +2,7 @@ package com.myagent.app.ui.chat
 
 import com.myagent.app.MainViewModel
 import android.media.MediaPlayer
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement

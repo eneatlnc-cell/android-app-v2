@@ -3,6 +3,7 @@ package com.myagent.app.model
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
@@ -100,7 +101,7 @@ class LiteRtEngine(private val context: Context) {
     try {
       val contents = mutableListOf<Content>()
       if (text.isNotEmpty()) {
-        contents.add(Content.TextPart(text))
+        contents.add(Content.Text(text))
       }
       for (path in imagePaths) {
         if (path.isNotBlank()) {
@@ -108,7 +109,7 @@ class LiteRtEngine(private val context: Context) {
           Log.i(TAG, "Attached image: $path")
         }
       }
-      val message = Message(contents)
+      val message = Message.user(Contents.of(contents))
       conv.sendMessageAsync(message).collect { chunk ->
         trySend(chunk.toString())
       }
