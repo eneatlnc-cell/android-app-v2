@@ -1,6 +1,10 @@
 package com.myagent.app.chat
 
+import android.content.ContentResolver
 import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.Log
 import com.myagent.app.memory.MemoryManager
 import com.myagent.app.model.LocalModelLoader
 import com.myagent.app.model.PersonaManager
@@ -22,6 +26,10 @@ import java.util.UUID
  * v2.0 多模态路由：
  * LLM 回复中携带 [GEN_IMAGE:主题] 或 [GEN_VIDEO:主题] 标记时，
  * 自动调用 MultiModalDispatcher 生成图片/视频，追加到消息列表。
+ *
+ * v2.1 多模态输入：
+ * 用户发送图片时，将图片路径通过 Content.ImageFile 传给 LiteRT-LM Conversation，
+ * Gemma 4 原生视觉编码器解析图片，LLM 真正"看到"图片内容。
  */
 class ChatController(
   private val scope: CoroutineScope,
@@ -29,7 +37,12 @@ class ChatController(
   private val memoryManager: MemoryManager,
   private val personaManager: PersonaManager,
   private val cacheDir: File,
+  private val contentResolver: ContentResolver,
 ) {
+  companion object {
+    private const val TAG = "ChatController"
+  }
+
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
   val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
@@ -65,11 +78,54 @@ class ChatController(
     return text to null
   }
 
+  // ── URI → 文件路径 ──
+
+  /**
+   * 将 content:// URI 复制到缓存目录，返回绝对文件路径。
+   * 图片传给 LiteRT-LM 需要绝对路径（Content.ImageFile）。
+   */
+  private fun resolveImagePath(uri: Uri): String? {
+    return try {
+      // 如果已经是 file:// 路径，直接返回
+      if (uri.scheme == "file") {
+        return uri.path
+      }
+
+      // content:// URI → 复制到缓存
+      val ext = uri.getExtension() ?: "jpg"
+      val file = File(cacheDir, "img_${UUID.randomUUID()}.$ext")
+      contentResolver.openInputStream(uri)?.use { input ->
+        FileOutputStream(file).use { output ->
+          input.copyTo(output)
+        }
+      }
+      Log.i(TAG, "Resolved image URI to: ${file.absolutePath}")
+      file.absolutePath
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to resolve image URI: ${e.message}")
+      null
+    }
+  }
+
+  private fun Uri.getExtension(): String? {
+    val name = contentResolver.query(this, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+      ?.use { cursor ->
+        if (cursor.moveToFirst()) {
+          cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+        } else null
+      }
+    return name?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() }
+  }
+
   // ── 发送消息 ──
 
-  fun sendMessage(message: String, attachments: List<OutgoingAttachment> = emptyList()) {
+  fun sendMessage(
+    message: String,
+    attachments: List<OutgoingAttachment> = emptyList(),
+    imagePaths: List<String> = emptyList(),
+  ) {
     val trimmed = message.trim()
-    if (trimmed.isEmpty() && attachments.isEmpty()) return
+    if (trimmed.isEmpty() && attachments.isEmpty() && imagePaths.isEmpty()) return
 
     currentStreamJob?.cancel()
 
@@ -80,7 +136,12 @@ class ChatController(
     )
     _messages.value = _messages.value + userMessage
 
-    memoryManager.saveMemory(role = "user", content = trimmed.ifEmpty { "[图片]" })
+    val memoryLabel = when {
+      imagePaths.isNotEmpty() -> "[图片]"
+      trimmed.isEmpty() -> "[图片]"
+      else -> trimmed
+    }
+    memoryManager.saveMemory(role = "user", content = memoryLabel)
 
     _errorText.value = null
     _isLoading.value = true
@@ -103,7 +164,7 @@ class ChatController(
           append("Memento: ")
         }
 
-        // 流式推理
+        // 流式推理 — 有图片时走多模态路径
         val assistantId = UUID.randomUUID().toString()
         val assistantMessage = ChatMessage(
           id = assistantId,
@@ -113,7 +174,13 @@ class ChatController(
         _messages.value = _messages.value + assistantMessage
 
         val fullResponse = StringBuilder()
-        modelLoader.generate(fullPrompt).collect { chunk ->
+        val inferenceFlow = if (imagePaths.isNotEmpty()) {
+          Log.i(TAG, "Multimodal inference: text + ${imagePaths.size} image(s)")
+          modelLoader.generateWithImages(fullPrompt, imagePaths)
+        } else {
+          modelLoader.generate(fullPrompt)
+        }
+        inferenceFlow.collect { chunk ->
           fullResponse.append(chunk)
           _streamingText.value = fullResponse.toString()
         }
@@ -211,7 +278,14 @@ class ChatController(
       attachmentUri = imageUri,
     )
     _messages.value = _messages.value + message
-    sendMessage(caption.ifEmpty { "请描述这张图片" })
+
+    // 将 content:// URI 转换为文件路径，传给多模态引擎
+    val imagePath = resolveImagePath(Uri.parse(imageUri))
+    val imagePaths = listOfNotNull(imagePath)
+    sendMessage(
+      message = caption.ifEmpty { "请描述这张图片" },
+      imagePaths = imagePaths,
+    )
   }
 
   fun sendVoice(audioUri: String, transcript: String = "") {

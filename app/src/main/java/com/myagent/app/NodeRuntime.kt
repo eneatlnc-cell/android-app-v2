@@ -53,7 +53,7 @@ class NodeRuntime(
   }
 
   // 聊天控制器
-  val chatController = ChatController(scope, modelLoader, memoryManager, personaManager, app.cacheDir)
+  val chatController = ChatController(scope, modelLoader, memoryManager, personaManager, app.cacheDir, app.contentResolver)
 
   // --- 模型下载状态 ---
 

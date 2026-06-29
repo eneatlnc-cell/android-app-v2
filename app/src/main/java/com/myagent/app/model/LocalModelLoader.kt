@@ -109,6 +109,51 @@ class LocalModelLoader(
     }
   }
 
+  /**
+   * 多模态流式生成（文本 + 图片）。
+   * 图片路径传给 LiteRT-LM Conversation，Gemma 4 原生视觉编码器解析。
+   */
+  fun generateWithImages(prompt: String, imagePaths: List<String>): Flow<String> {
+    if (!initialized || modelPath == null) {
+      Log.w(TAG, "Model not ready, cannot generate")
+      return callbackFlow {
+        trySend("模型尚未下载完成，请等待下载结束后再试。")
+        close()
+      }
+    }
+    return callbackFlow {
+      val inferenceScope = CoroutineScope(Dispatchers.IO)
+
+      val inferenceJob = inferenceScope.launch {
+        try {
+          engine.generateWithImages(prompt, imagePaths).collect { chunk ->
+            trySend(chunk)
+          }
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          Log.e(TAG, "Inference with images error: ${e.message}")
+        }
+        close()
+      }
+
+      val finished = withTimeoutOrNull(INFERENCE_TIMEOUT_MS * 2) { // 图片推理给更多时间
+        inferenceJob.join()
+        true
+      }
+
+      if (finished != true) {
+        inferenceScope.cancel()
+        Log.e(TAG, "Inference with images timed out")
+        trySend("抱歉，模型推理超时了。可能是手机内存不足，请尝试重启 App")
+        initialized = false
+        close()
+      }
+
+      awaitClose { inferenceScope.cancel() }
+    }
+  }
+
   fun isRealModelAvailable(): Boolean = initialized && modelPath != null
 
   fun unload() {
