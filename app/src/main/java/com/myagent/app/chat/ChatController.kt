@@ -1,8 +1,10 @@
 package com.myagent.app.chat
 
+import android.graphics.Bitmap
 import com.myagent.app.memory.MemoryManager
 import com.myagent.app.model.LocalModelLoader
 import com.myagent.app.model.PersonaManager
+import com.myagent.app.multimodal.MultiModalDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -10,26 +12,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 /**
- * 聊天控制器 — 协调 LocalModelLoader、MemoryManager、PersonaManager。
+ * 聊天控制器 — 协调 LocalModelLoader、MemoryManager、PersonaManager、MultiModalDispatcher。
  *
- * 数据流：
- * 用户输入 → PersonaManager.getSystemPrompt()
- *          → MemoryManager.getFullContext()  [短期 5 条 + 长期 3 条摘要]
- *          → 组装 Prompt
- *          → LocalModelLoader.generate() [流式]
- *          → UI 逐字显示
- *          → MemoryManager.saveMemory()  [自动压缩超出部分到长期]
- *
- * v2.0：LocalModelLoader 底层使用 LiteRT-LM 引擎，纯 Kotlin 实现。
+ * v2.0 多模态路由：
+ * LLM 回复中携带 [GEN_IMAGE:主题] 或 [GEN_VIDEO:主题] 标记时，
+ * 自动调用 MultiModalDispatcher 生成图片/视频，追加到消息列表。
  */
 class ChatController(
   private val scope: CoroutineScope,
   private val modelLoader: LocalModelLoader,
   private val memoryManager: MemoryManager,
   private val personaManager: PersonaManager,
+  private val cacheDir: File,
 ) {
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
   val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -45,17 +44,35 @@ class ChatController(
 
   private var currentStreamJob: Job? = null
 
-  /**
-   * 发送消息并获取流式回复
-   */
+  // ── 多模态标记解析 ──
+
+  private val imageTag = Regex("""^\[GEN_IMAGE:(.+?)]\s*""")
+  private val videoTag = Regex("""^\[GEN_VIDEO:(.+?)]\s*""")
+
+  private data class GenAction(val type: String, val prompt: String)
+
+  private fun parseMultimodalTag(text: String): Pair<String, GenAction?> {
+    imageTag.find(text)?.let { match ->
+      val prompt = match.groupValues[1].trim()
+      val clean = text.removeRange(match.range).trimStart()
+      return clean to GenAction("image", prompt)
+    }
+    videoTag.find(text)?.let { match ->
+      val prompt = match.groupValues[1].trim()
+      val clean = text.removeRange(match.range).trimStart()
+      return clean to GenAction("video", prompt)
+    }
+    return text to null
+  }
+
+  // ── 发送消息 ──
+
   fun sendMessage(message: String, attachments: List<OutgoingAttachment> = emptyList()) {
     val trimmed = message.trim()
     if (trimmed.isEmpty() && attachments.isEmpty()) return
 
-    // 取消正在进行的流式输出
     currentStreamJob?.cancel()
 
-    // 添加用户消息
     val userMessage = ChatMessage(
       id = UUID.randomUUID().toString(),
       role = "user",
@@ -63,7 +80,6 @@ class ChatController(
     )
     _messages.value = _messages.value + userMessage
 
-    // 保存用户消息到记忆
     memoryManager.saveMemory(role = "user", content = trimmed.ifEmpty { "[图片]" })
 
     _errorText.value = null
@@ -72,16 +88,10 @@ class ChatController(
 
     currentStreamJob = scope.launch {
       try {
-        // 1. 获取人格 System Prompt
         val systemPrompt = personaManager.getSystemPrompt()
-
-        // 2. 获取双层记忆上下文（短期 5 条 + 长期 3 条摘要）
         val memoryContext = memoryManager.getFullContext()
-
-        // 3. 组装 Prompt（如果只有图片无文字，给一个默认提示）
         val promptText = trimmed.ifEmpty { "请描述这张图片" }
 
-        // 4. 组装 Prompt
         val fullPrompt = buildString {
           append(systemPrompt)
           if (memoryContext.isNotEmpty()) {
@@ -93,7 +103,7 @@ class ChatController(
           append("Memento: ")
         }
 
-        // 5. 流式推理
+        // 流式推理
         val assistantId = UUID.randomUUID().toString()
         val assistantMessage = ChatMessage(
           id = assistantId,
@@ -108,20 +118,29 @@ class ChatController(
           _streamingText.value = fullResponse.toString()
         }
 
-        // 6. 更新最终消息
-        val finalContent = fullResponse.toString()
+        val rawContent = fullResponse.toString()
+
+        // 解析多模态意图标记
+        val (cleanContent, genAction) = parseMultimodalTag(rawContent)
+
+        // 更新文字消息（去掉标记）
         _messages.value = _messages.value.map {
-          if (it.id == assistantId) it.copy(content = finalContent) else it
+          if (it.id == assistantId) it.copy(content = cleanContent) else it
         }
 
-        // 7. 保存助手回复到记忆（过滤掉循环输出）
-        val cleaned = finalContent.trim()
+        // 保存助手回复到记忆
+        val cleaned = cleanContent.trim()
         if (cleaned.isNotEmpty() && !isLoopOutput(cleaned)) {
           memoryManager.saveMemory(role = "assistant", content = cleaned)
         }
 
         _streamingText.value = null
         _isLoading.value = false
+
+        // 多模态生成
+        if (genAction != null) {
+          dispatchGeneration(genAction)
+        }
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
@@ -133,8 +152,56 @@ class ChatController(
   }
 
   /**
-   * 发送图片消息
+   * 调度多模态生成 — 图片/视频。
    */
+  private suspend fun dispatchGeneration(action: GenAction) {
+    when (action.type) {
+      "image" -> {
+        try {
+          val bitmap = MultiModalDispatcher.generateImage(action.prompt)
+          val file = File(cacheDir, "gen_${UUID.randomUUID()}.png")
+          FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+          val imageMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            role = "assistant",
+            content = action.prompt,
+            type = "image",
+            attachmentUri = file.toURI().toString(),
+          )
+          _messages.value = _messages.value + imageMsg
+        } catch (e: Exception) {
+          _errorText.value = "图片生成失败: ${e.message}"
+        }
+      }
+      "video" -> {
+        val progressId = UUID.randomUUID().toString()
+        val progressMsg = ChatMessage(
+          id = progressId,
+          role = "assistant",
+          content = "正在渲染视频「${action.prompt}」，请稍候...",
+        )
+        _messages.value = _messages.value + progressMsg
+        try {
+          val videoFile = MultiModalDispatcher.renderVideo(action.prompt)
+          val videoMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            role = "assistant",
+            content = action.prompt,
+            type = "video",
+            attachmentUri = videoFile.toURI().toString(),
+          )
+          _messages.value = _messages.value.map {
+            if (it.id == progressId) videoMsg else it
+          }
+        } catch (e: Exception) {
+          _messages.value = _messages.value.map {
+            if (it.id == progressId) it.copy(content = "视频生成失败: ${e.message}") else it
+          }
+        }
+      }
+    }
+  }
+
   fun sendImage(imageUri: String, caption: String = "") {
     val message = ChatMessage(
       id = UUID.randomUUID().toString(),
@@ -147,9 +214,6 @@ class ChatController(
     sendMessage(caption.ifEmpty { "请描述这张图片" })
   }
 
-  /**
-   * 发送语音消息
-   */
   fun sendVoice(audioUri: String, transcript: String = "") {
     val message = ChatMessage(
       id = UUID.randomUUID().toString(),
@@ -164,9 +228,6 @@ class ChatController(
     }
   }
 
-  /**
-   * 中止当前正在进行的流式输出
-   */
   fun abort() {
     currentStreamJob?.cancel()
     currentStreamJob = null
@@ -174,9 +235,6 @@ class ChatController(
     _isLoading.value = false
   }
 
-  /**
-   * 清空聊天记录
-   */
   fun clearMessages() {
     currentStreamJob?.cancel()
     currentStreamJob = null
@@ -186,15 +244,10 @@ class ChatController(
     _errorText.value = null
   }
 
-  /**
-   * 检测是否为循环输出（如 "Memento: Memento: Memento:"）
-   */
   private fun isLoopOutput(text: String): Boolean {
     if (text.length < 3) return false
-    // 按空格/换行分割
     val tokens = text.split(Regex("\\s+")).filter { it.isNotBlank() }
     if (tokens.size < 3) return false
-    // 检查是否有超过一半的 token 相同
     val maxCount = tokens.groupingBy { it }.eachCount().values.maxOrNull() ?: 0
     return maxCount > tokens.size / 2
   }

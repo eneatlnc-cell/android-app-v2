@@ -420,6 +420,36 @@ private fun MessageBubble(
             )
           }
         }
+        "video" -> {
+          Box(
+            modifier = Modifier
+              .width(200.dp)
+              .height(120.dp)
+              .clip(RoundedCornerShape(8.dp))
+              .background(
+                if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+              ),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Default.PlayArrow,
+              contentDescription = "播放视频",
+              tint = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
+              else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+              modifier = Modifier.size(44.dp),
+            )
+          }
+          if (message.content.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = message.content,
+              color = if (isUser) MaterialTheme.colorScheme.onPrimary
+              else MaterialTheme.colorScheme.onSurface,
+              fontSize = 13.sp,
+            )
+          }
+        }
         else -> {
           if (message.content.isNotEmpty()) {
             Text(
