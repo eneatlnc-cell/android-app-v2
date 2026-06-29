@@ -101,6 +101,8 @@ class LocalModelLoader(
         inferenceScope.cancel()
         Log.e(TAG, "Inference timed out after ${INFERENCE_TIMEOUT_MS}ms")
         trySend("抱歉，模型推理超时了。可能是手机内存不足，请尝试重启 App")
+        // 超时后必须关闭引擎释放内存，否则模型权重持续占用
+        engine.close()
         initialized = false
         close()
       }
@@ -146,6 +148,8 @@ class LocalModelLoader(
         inferenceScope.cancel()
         Log.e(TAG, "Inference with images timed out")
         trySend("抱歉，模型推理超时了。可能是手机内存不足，请尝试重启 App")
+        // 超时后必须关闭引擎释放内存，否则模型权重持续占用
+        engine.close()
         initialized = false
         close()
       }

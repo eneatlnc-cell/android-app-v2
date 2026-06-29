@@ -48,7 +48,7 @@ class ModelInstaller(private val context: Context) {
 
     private const val BUFFER_SIZE = 8192
     private const val CONNECT_TIMEOUT_MS = 15_000
-    private const val READ_TIMEOUT_MS = 60_000 // 大文件下载需要更长的超时
+    private const val READ_TIMEOUT_MS = 120_000 // 3.66GB 大文件下载，需要更长的读取超时
     const val MAX_RETRIES = 3 // 最大重试次数
     private const val RETRY_DELAY_MS = 2000L // 重试前等待
   }

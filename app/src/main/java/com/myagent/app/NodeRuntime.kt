@@ -92,6 +92,14 @@ class NodeRuntime(
     startModelDownload()
   }
 
+  /**
+   * 卸载模型释放内存 — 供系统内存压力回调调用。
+   * 卸载后下次推理会自动重新加载。
+   */
+  fun unloadModel() {
+    modelLoader.unload()
+  }
+
   val isModelReady: Boolean
     get() = _downloadState.value is ModelDownloadState.Completed ||
       modelInstaller.isModelReady()
