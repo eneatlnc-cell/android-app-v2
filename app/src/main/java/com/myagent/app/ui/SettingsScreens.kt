@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 
 /**
  * 设置页面 — v2.0 仪式感人格 + 视频画质设置。
+ *
+ * 拆分为独立的 Section 组件，每个弹窗独立管理状态。
  */
 @Composable
 fun SettingsScreen(
@@ -70,42 +72,12 @@ fun SettingsScreen(
       modifier = Modifier.padding(bottom = 16.dp),
     )
 
-    // ── 人格设置（仪式感） ──
-    if (personaSelected) {
-      // 已锁定：显示当前人格，不可点击
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(vertical = 16.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Icon(
-          imageVector = Icons.Default.Lock,
-          contentDescription = null,
-          tint = Color(0xFF6C5CE7),
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = "AI 人格",
-            style = MaterialTheme.typography.bodyLarge,
-          )
-          Text(
-            text = "${currentPersona.emoji} ${currentPersona.displayName}（已锁定，终身有效）",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF6C5CE7),
-          )
-        }
-      }
-    } else {
-      // 未选择：显示入口
-      SettingsRow(
-        icon = Icons.Default.Person,
-        title = "选择人格",
-        subtitle = "当前：${currentPersona.displayName}（默认，可更改）",
-        onClick = onRequestPersonaSelection,
-      )
-    }
+    // ── 人格设置 ──
+    PersonaSection(
+      personaSelected = personaSelected,
+      currentPersona = currentPersona,
+      onRequestPersonaSelection = onRequestPersonaSelection,
+    )
 
     HorizontalDivider()
 
@@ -148,7 +120,7 @@ fun SettingsScreen(
     )
   }
 
-  // 外观选择弹窗
+  // 弹窗
   if (showAppearanceDialog) {
     AppearanceDialog(
       currentMode = appearanceMode,
@@ -160,7 +132,6 @@ fun SettingsScreen(
     )
   }
 
-  // 视频画质选择弹窗
   if (showVideoDialog) {
     VideoConfigDialog(
       currentConfig = videoConfig,
@@ -172,6 +143,56 @@ fun SettingsScreen(
     )
   }
 }
+
+// ── 人格区域 ──
+
+@Composable
+private fun PersonaSection(
+  personaSelected: Boolean,
+  currentPersona: PersonaType,
+  onRequestPersonaSelection: () -> Unit,
+) {
+  if (personaSelected) {
+    PersonaLockedRow(currentPersona = currentPersona)
+  } else {
+    SettingsRow(
+      icon = Icons.Default.Person,
+      title = "选择人格",
+      subtitle = "当前：${currentPersona.displayName}（默认，可更改）",
+      onClick = onRequestPersonaSelection,
+    )
+  }
+}
+
+@Composable
+private fun PersonaLockedRow(currentPersona: PersonaType) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(vertical = 16.dp, horizontal = 4.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Icon(
+      imageVector = Icons.Default.Lock,
+      contentDescription = null,
+      tint = Color(0xFF6C5CE7),
+    )
+    Spacer(modifier = Modifier.width(16.dp))
+    Column(modifier = Modifier.weight(1f)) {
+      Text(
+        text = "AI 人格",
+        style = MaterialTheme.typography.bodyLarge,
+      )
+      Text(
+        text = "${currentPersona.emoji} ${currentPersona.displayName}（已锁定，终身有效）",
+        style = MaterialTheme.typography.bodyMedium,
+        color = Color(0xFF6C5CE7),
+      )
+    }
+  }
+}
+
+// ── 通用设置行 ──
 
 @Composable
 private fun SettingsRow(
@@ -209,7 +230,8 @@ private fun SettingsRow(
   }
 }
 
-// ── 视频画质标签 ──
+// ── 视频画质 ──
+
 private fun videoConfigLabel(config: VideoConfig): String {
   val presetIndex = VideoConfig.PRESETS.indexOfFirst {
     it.width == config.width && it.height == config.height && it.fps == config.fps
@@ -236,30 +258,12 @@ private fun VideoConfigDialog(
           val isSelected = config.width == currentConfig.width &&
             config.height == currentConfig.height &&
             config.fps == currentConfig.fps
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable { onSelect(config) }
-              .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            RadioButton(
-              selected = isSelected,
-              onClick = { onSelect(config) },
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Column {
-              Text(
-                text = VideoConfig.PRESET_LABELS[index],
-                style = MaterialTheme.typography.bodyMedium,
-              )
-              Text(
-                text = "${config.width}×${config.height} · ${config.fps}fps · 最长${config.maxDuration}s",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-          }
+          SelectableRow(
+            label = VideoConfig.PRESET_LABELS[index],
+            detail = "${config.width}×${config.height} · ${config.fps}fps · 最长${config.maxDuration}s",
+            selected = isSelected,
+            onClick = { onSelect(config) },
+          )
         }
       }
     },
@@ -268,6 +272,73 @@ private fun VideoConfigDialog(
     },
   )
 }
+
+// ── 外观弹窗 ──
+
+@Composable
+private fun AppearanceDialog(
+  currentMode: AppearanceThemeMode,
+  onSelect: (AppearanceThemeMode) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  val modes = listOf(
+    AppearanceThemeMode.System to "跟随系统",
+    AppearanceThemeMode.Light to "浅色",
+    AppearanceThemeMode.Dark to "深色",
+  )
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("选择外观") },
+    text = {
+      Column {
+        for ((mode, label) in modes) {
+          SelectableRow(
+            label = label,
+            selected = mode == currentMode,
+            onClick = { onSelect(mode) },
+          )
+        }
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = onDismiss) { Text("取消") }
+    },
+  )
+}
+
+// ── 通用可选项行 ──
+
+@Composable
+private fun SelectableRow(
+  label: String,
+  selected: Boolean,
+  onClick: () -> Unit,
+  detail: String? = null,
+) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick)
+      .padding(vertical = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    RadioButton(selected = selected, onClick = onClick)
+    Spacer(modifier = Modifier.width(8.dp))
+    Column {
+      Text(text = label, style = MaterialTheme.typography.bodyMedium)
+      if (detail != null) {
+        Text(
+          text = detail,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
+  }
+}
+
+// ── 模型下载区域 ──
 
 @Composable
 private fun DownloadSection(
@@ -290,10 +361,7 @@ private fun DownloadSection(
     )
     Spacer(modifier = Modifier.width(16.dp))
     Column(modifier = Modifier.weight(1f)) {
-      Text(
-        text = "AI 模型",
-        style = MaterialTheme.typography.bodyLarge,
-      )
+      Text(text = "AI 模型", style = MaterialTheme.typography.bodyLarge)
       Text(
         text = when {
           isCompleted -> "模型已就绪"
@@ -309,54 +377,11 @@ private fun DownloadSection(
     if (!isDownloading && !isCompleted) {
       Button(
         onClick = onStartDownload,
-        colors = ButtonDefaults.buttonColors(
-          containerColor = Color(0xFF4ECDC4),
-        ),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4ECDC4)),
       ) {
         Text("下载")
       }
     }
   }
   HorizontalDivider()
-}
-
-@Composable
-private fun AppearanceDialog(
-  currentMode: AppearanceThemeMode,
-  onSelect: (AppearanceThemeMode) -> Unit,
-  onDismiss: () -> Unit,
-) {
-  val modes = listOf(
-    AppearanceThemeMode.System to "跟随系统",
-    AppearanceThemeMode.Light to "浅色",
-    AppearanceThemeMode.Dark to "深色",
-  )
-
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text("选择外观") },
-    text = {
-      Column {
-        for ((mode, label) in modes) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable { onSelect(mode) }
-              .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            RadioButton(
-              selected = mode == currentMode,
-              onClick = { onSelect(mode) },
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(text = label)
-          }
-        }
-      }
-    },
-    confirmButton = {
-      TextButton(onClick = onDismiss) { Text("取消") }
-    },
-  )
 }
