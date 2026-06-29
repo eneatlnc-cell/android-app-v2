@@ -21,7 +21,14 @@ fun RootScreen(viewModel: MainViewModel) {
   val onboardingCompleted by viewModel.onboardingCompleted.collectAsState()
   val downloadState by viewModel.downloadState.collectAsState()
 
-  val modelReady = downloadState is ModelDownloadState.Completed
+  // 模型就绪判断：
+  // - Completed 直接通过
+  // - onboarding 已完成 + Idle（Runtime 未启动时的默认值）→ 信任上次已下载
+  val modelReady = when (downloadState) {
+    is ModelDownloadState.Completed -> true
+    is ModelDownloadState.Idle -> onboardingCompleted
+    else -> false
+  }
 
   when {
     // 步骤1：欢迎页
