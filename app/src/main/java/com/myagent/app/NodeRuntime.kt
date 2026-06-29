@@ -9,6 +9,7 @@ import com.myagent.app.model.ModelDownloadState
 import com.myagent.app.model.ModelInstaller
 import com.myagent.app.model.PersonaManager
 import com.myagent.app.model.PersonaType
+import com.myagent.app.multimodal.MultiModalDispatcher
 import com.myagent.app.multimodal.VideoConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -150,6 +151,14 @@ class NodeRuntime(
     chatController.sendMessage(message, attachments)
   }
 
+  fun sendImage(imageUri: String, caption: String = "") {
+    chatController.sendImage(imageUri, caption)
+  }
+
+  fun sendVoice(audioUri: String, transcript: String = "") {
+    chatController.sendVoice(audioUri, transcript)
+  }
+
   fun abortChat() {
     chatController.abort()
   }
@@ -160,5 +169,21 @@ class NodeRuntime(
 
   fun setAppearanceThemeMode(mode: AppearanceThemeMode) {
     prefs.setAppearanceThemeMode(mode)
+  }
+
+  // --- 多模态调度 ---
+
+  /**
+   * 合成语音并返回 WAV 数据
+   */
+  suspend fun synthesizeSpeech(text: String, voice: String = "af_heart"): ByteArray {
+    return MultiModalDispatcher.synthesizeSpeech(text, voice)
+  }
+
+  /**
+   * 生成图片
+   */
+  suspend fun generateImage(prompt: String, style: String? = null): android.graphics.Bitmap {
+    return MultiModalDispatcher.generateImage(prompt, style)
   }
 }

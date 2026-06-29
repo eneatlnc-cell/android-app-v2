@@ -7,6 +7,8 @@ import com.myagent.app.model.ModelDownloadState
 import com.myagent.app.model.PersonaType
 import com.myagent.app.multimodal.VideoConfig
 import android.app.Application
+import android.graphics.Bitmap
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -154,6 +156,14 @@ class MainViewModel(
     ensureRuntime().sendChat(message, attachments)
   }
 
+  fun sendImage(uri: Uri, caption: String = "") {
+    ensureRuntime().sendImage(uri.toString(), caption)
+  }
+
+  fun sendVoice(uri: Uri, transcript: String = "") {
+    ensureRuntime().sendVoice(uri.toString(), transcript)
+  }
+
   fun abortChat() {
     ensureRuntime().abortChat()
   }
@@ -175,5 +185,18 @@ class MainViewModel(
   // --- 外观 ---
   fun setAppearanceThemeMode(mode: AppearanceThemeMode) {
     ensureRuntime().setAppearanceThemeMode(mode)
+  }
+
+  // --- 多模态操作 ---
+
+  private val _ttsPlaying = MutableStateFlow(false)
+  val ttsPlaying: StateFlow<Boolean> = _ttsPlaying.asStateFlow()
+
+  suspend fun synthesizeSpeech(text: String): ByteArray {
+    return ensureRuntime().synthesizeSpeech(text)
+  }
+
+  suspend fun generateImage(prompt: String): Bitmap {
+    return ensureRuntime().generateImage(prompt)
   }
 }

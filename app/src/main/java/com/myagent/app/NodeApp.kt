@@ -5,6 +5,7 @@ import android.os.StrictMode
 import com.myagent.app.activation.ActivationManager
 import com.myagent.app.memory.MemoryManager
 import com.myagent.app.model.PersonaManager
+import com.myagent.app.multimodal.MultiModalDispatcher
 
 /**
  * Android Application 单例 — 持有全局 SecurePrefs、MemoryManager、PersonaManager、ActivationManager。
@@ -34,6 +35,7 @@ class NodeApp : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    MultiModalDispatcher.init(this)
     if (BuildConfig.DEBUG) {
       StrictMode.setThreadPolicy(
         StrictMode.ThreadPolicy

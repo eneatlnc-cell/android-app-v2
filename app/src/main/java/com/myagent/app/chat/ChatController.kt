@@ -64,7 +64,7 @@ class ChatController(
     _messages.value = _messages.value + userMessage
 
     // 保存用户消息到记忆
-    memoryManager.saveMemory(role = "user", content = trimmed)
+    memoryManager.saveMemory(role = "user", content = trimmed.ifEmpty { "[图片]" })
 
     _errorText.value = null
     _isLoading.value = true
@@ -78,7 +78,10 @@ class ChatController(
         // 2. 获取双层记忆上下文（短期 5 条 + 长期 3 条摘要）
         val memoryContext = memoryManager.getFullContext()
 
-        // 3. 组装 Prompt
+        // 3. 组装 Prompt（如果只有图片无文字，给一个默认提示）
+        val promptText = trimmed.ifEmpty { "请描述这张图片" }
+
+        // 4. 组装 Prompt
         val fullPrompt = buildString {
           append(systemPrompt)
           if (memoryContext.isNotEmpty()) {
@@ -86,11 +89,11 @@ class ChatController(
             append(memoryContext)
             append("\n--- 当前对话 ---\n")
           }
-          append("用户: $trimmed\n")
+          append("用户: $promptText\n")
           append("Memento: ")
         }
 
-        // 4. 流式推理
+        // 5. 流式推理
         val assistantId = UUID.randomUUID().toString()
         val assistantMessage = ChatMessage(
           id = assistantId,
@@ -105,13 +108,13 @@ class ChatController(
           _streamingText.value = fullResponse.toString()
         }
 
-        // 5. 更新最终消息
+        // 6. 更新最终消息
         val finalContent = fullResponse.toString()
         _messages.value = _messages.value.map {
           if (it.id == assistantId) it.copy(content = finalContent) else it
         }
 
-        // 6. 保存助手回复到记忆（过滤掉循环输出）
+        // 7. 保存助手回复到记忆（过滤掉循环输出）
         val cleaned = finalContent.trim()
         if (cleaned.isNotEmpty() && !isLoopOutput(cleaned)) {
           memoryManager.saveMemory(role = "assistant", content = cleaned)
@@ -120,13 +123,44 @@ class ChatController(
         _streamingText.value = null
         _isLoading.value = false
       } catch (e: CancellationException) {
-        // 协程被取消（用户中止等），重新抛出，不显示为错误
         throw e
       } catch (e: Exception) {
         _errorText.value = e.message ?: "发送失败，请重试"
         _streamingText.value = null
         _isLoading.value = false
       }
+    }
+  }
+
+  /**
+   * 发送图片消息
+   */
+  fun sendImage(imageUri: String, caption: String = "") {
+    val message = ChatMessage(
+      id = UUID.randomUUID().toString(),
+      role = "user",
+      content = caption.ifEmpty { "图片" },
+      type = "image",
+      attachmentUri = imageUri,
+    )
+    _messages.value = _messages.value + message
+    sendMessage(caption.ifEmpty { "请描述这张图片" })
+  }
+
+  /**
+   * 发送语音消息
+   */
+  fun sendVoice(audioUri: String, transcript: String = "") {
+    val message = ChatMessage(
+      id = UUID.randomUUID().toString(),
+      role = "user",
+      content = transcript.ifEmpty { "语音消息" },
+      type = "voice",
+      attachmentUri = audioUri,
+    )
+    _messages.value = _messages.value + message
+    if (transcript.isNotEmpty()) {
+      sendMessage(transcript)
     }
   }
 

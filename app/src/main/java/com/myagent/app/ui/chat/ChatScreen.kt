@@ -2,6 +2,12 @@ package com.myagent.app.ui.chat
 
 import com.myagent.app.MainViewModel
 import com.myagent.app.chat.ChatMessage
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -28,6 +34,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,16 +46,26 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
 /**
  * 聊天页面 — 多模态对话：文本 + 图片 + 语音。
@@ -56,6 +73,9 @@ import androidx.compose.ui.unit.sp
  * 交互：
  * - 点击空白区域收起键盘
  * - 发送消息后自动收起键盘
+ * - 图片选择器（系统相册）
+ * - 语音录制（MediaRecorder）
+ * - TTS 播放（Kokoro ONNX）
  */
 @Composable
 fun ChatScreen(
@@ -71,6 +91,22 @@ fun ChatScreen(
   val listState = rememberLazyListState()
   val focusManager = LocalFocusManager.current
   val keyboardController = LocalSoftwareKeyboardController.current
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+
+  // --- 语音录制状态 ---
+  var isRecording by remember { mutableStateOf(false) }
+  var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+  var audioFile by remember { mutableStateOf<File?>(null) }
+
+  // --- 图片选择器 ---
+  val imagePicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.GetContent()
+  ) { uri: Uri? ->
+    uri?.let {
+      viewModel.sendImage(it)
+    }
+  }
 
   // 自动滚动到最新消息
   LaunchedEffect(messages.size, streamingText) {
@@ -117,7 +153,29 @@ fun ChatScreen(
       }
 
       items(messages, key = { it.id }) { message ->
-        MessageBubble(message = message)
+        MessageBubble(
+          message = message,
+          onPlayTts = { text ->
+            scope.launch {
+              try {
+                val wav = withContext(Dispatchers.Default) {
+                  viewModel.synthesizeSpeech(text)
+                }
+                val tmp = File(context.cacheDir, "tts_${message.id}.wav")
+                FileOutputStream(tmp).use { it.write(wav) }
+                withContext(Dispatchers.Main) {
+                  val mp = MediaPlayer()
+                  mp.setDataSource(tmp.absolutePath)
+                  mp.prepare()
+                  mp.start()
+                  mp.setOnCompletionListener { it.release() }
+                }
+              } catch (_: Exception) {
+                // TTS 播放失败，静默忽略
+              }
+            }
+          },
+        )
       }
 
       // 流式文字
@@ -164,26 +222,56 @@ fun ChatScreen(
         .padding(horizontal = 8.dp, vertical = 6.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      // 语音入口
+      // 语音入口 — 长按录音，松开发送
       IconButton(
         onClick = {
-          // TODO: 启动语音录制（步骤5逻辑占位）
+          if (isRecording) {
+            // 停止录音并发送
+            try {
+              recorder?.stop()
+              recorder?.release()
+            } catch (_: Exception) {}
+            recorder = null
+            isRecording = false
+            audioFile?.let { file ->
+              viewModel.sendVoice(Uri.fromFile(file))
+            }
+          } else {
+            // 开始录音
+            try {
+              val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
+              audioFile = file
+              val mr = MediaRecorder(context).apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(16000)
+                setAudioEncodingBitRate(32000)
+                setOutputFile(file.absolutePath)
+                prepare()
+                start()
+              }
+              recorder = mr
+              isRecording = true
+            } catch (_: Exception) {
+              isRecording = false
+            }
+          }
         },
         modifier = Modifier.size(44.dp),
       ) {
         Icon(
-          imageVector = Icons.Default.Mic,
-          contentDescription = "语音输入",
-          tint = if (isLoading) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+          imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+          contentDescription = if (isRecording) "停止录音" else "语音输入",
+          tint = if (isRecording) MaterialTheme.colorScheme.error
+          else if (isLoading) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
           else MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
 
       // 图片入口
       IconButton(
-        onClick = {
-          // TODO: 打开图片选择器（步骤5逻辑占位）
-        },
+        onClick = { imagePicker.launch("image/*") },
         modifier = Modifier.size(44.dp),
       ) {
         Icon(
@@ -221,7 +309,6 @@ fun ChatScreen(
             if (text.isNotEmpty()) {
               viewModel.sendChat(text)
               inputText = ""
-              // 发送后收起键盘
               focusManager.clearFocus()
               keyboardController?.hide()
             }
@@ -242,7 +329,10 @@ fun ChatScreen(
  * 多模态消息气泡 — 支持文字、图片、语音。
  */
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(
+  message: ChatMessage,
+  onPlayTts: (String) -> Unit = {},
+) {
   val isUser = message.role == "user"
 
   Box(
@@ -268,24 +358,39 @@ private fun MessageBubble(message: ChatMessage) {
     ) {
       when (message.type) {
         "image" -> {
-          Box(
-            modifier = Modifier
-              .width(200.dp)
-              .height(150.dp)
-              .clip(RoundedCornerShape(8.dp))
-              .background(
-                if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f)
-                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
-              ),
-            contentAlignment = Alignment.Center,
-          ) {
-            Icon(
-              imageVector = Icons.Default.Image,
+          if (message.attachmentUri != null) {
+            AsyncImage(
+              model = ImageRequest.Builder(LocalContext.current)
+                .data(message.attachmentUri)
+                .crossfade(true)
+                .build(),
               contentDescription = "图片",
-              tint = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
-              else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-              modifier = Modifier.size(40.dp),
+              modifier = Modifier
+                .width(200.dp)
+                .height(150.dp)
+                .clip(RoundedCornerShape(8.dp)),
+              contentScale = ContentScale.Crop,
             )
+          } else {
+            Box(
+              modifier = Modifier
+                .width(200.dp)
+                .height(150.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                  if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f)
+                  else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                ),
+              contentAlignment = Alignment.Center,
+            ) {
+              Icon(
+                imageVector = Icons.Default.Image,
+                contentDescription = "图片",
+                tint = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.size(40.dp),
+              )
+            }
           }
           if (message.content.isNotEmpty()) {
             Spacer(modifier = Modifier.height(6.dp))
@@ -333,6 +438,24 @@ private fun MessageBubble(message: ChatMessage) {
               fontSize = 12.sp,
             )
           }
+        }
+      }
+
+      // TTS 播放按钮 — 仅 AI 消息
+      if (!isUser && message.content.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(4.dp))
+        IconButton(
+          onClick = { onPlayTts(message.content) },
+          modifier = Modifier
+            .size(28.dp)
+            .align(Alignment.End),
+        ) {
+          Icon(
+            imageVector = Icons.Default.VolumeUp,
+            contentDescription = "播放语音",
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+            modifier = Modifier.size(16.dp),
+          )
         }
       }
     }

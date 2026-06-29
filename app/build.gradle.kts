@@ -90,8 +90,8 @@ dependencies {
 
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.tooling.preview)
-  implementation(libs.androidx.compose.material3)
   implementation(libs.androidx.compose.material.icons.extended)
+  implementation(libs.androidx.compose.material3)
 
   debugImplementation(libs.androidx.compose.ui.tooling)
 
@@ -116,6 +116,7 @@ dependencies {
   implementation(libs.commonmark.ext.gfm.strikethrough)
   implementation(libs.commonmark.ext.gfm.tables)
   implementation(libs.commonmark.ext.task.list.items)
+  implementation(libs.coil.compose)
 
   // Room (SQLite memory layer)
   implementation(libs.room.runtime)
