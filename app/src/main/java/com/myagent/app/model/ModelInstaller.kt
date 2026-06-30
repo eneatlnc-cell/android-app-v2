@@ -360,8 +360,19 @@ class ModelInstaller(private val context: Context) {
         }
       }
 
+      // 强制刷盘：确保 3.66GB 文件完全写入物理磁盘再校验
+      output.fd.sync()
+
       // 最终报告
       onProgress(downloaded, 0)
+
+      // 下载量校验：CDN 可能提前断流导致文件不完整
+      if (downloaded != totalSize) {
+        throw IOException(
+          "下载不完整: 期望 ${totalSize} 字节, 实际仅收到 ${downloaded} 字节 " +
+          "(${"%.1f".format(downloaded * 100.0 / totalSize.coerceAtLeast(1))}%)"
+        )
+      }
     } finally {
       output?.close()
       input?.close()
