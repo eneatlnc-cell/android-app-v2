@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -44,12 +45,30 @@ import androidx.compose.ui.unit.sp
  */
 @Composable
 fun ActivationScreen(
-  onActivate: (code: String) -> Boolean,
+  onActivate: (code: String, onResult: (Boolean) -> Unit) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var code by remember { mutableStateOf("") }
   var errorMessage by remember { mutableStateOf<String?>(null) }
   var showError by remember { mutableStateOf(false) }
+  var isLoading by remember { mutableStateOf(false) }
+
+  val doActivate: (String) -> Unit = { input ->
+    if (input.isBlank()) {
+      errorMessage = "请输入激活码"
+      showError = true
+      return@Unit
+    }
+    isLoading = true
+    showError = false
+    onActivate(input.trim()) { success ->
+      isLoading = false
+      if (!success) {
+        errorMessage = "激活码无效，请检查后重试"
+        showError = true
+      }
+    }
+  }
 
   Box(
     modifier = modifier
@@ -110,15 +129,7 @@ fun ActivationScreen(
           imeAction = ImeAction.Done,
         ),
         keyboardActions = KeyboardActions(
-          onDone = {
-            if (code.isNotBlank()) {
-              val success = onActivate(code.trim())
-              if (!success) {
-                errorMessage = "激活码无效，请检查后重试"
-                showError = true
-              }
-            }
-          }
+          onDone = { doActivate(code) },
         ),
         shape = RoundedCornerShape(12.dp),
       )
@@ -144,18 +155,7 @@ fun ActivationScreen(
 
       // 激活按钮
       Button(
-        onClick = {
-          if (code.isBlank()) {
-            errorMessage = "请输入激活码"
-            showError = true
-          } else {
-            val success = onActivate(code.trim())
-            if (!success) {
-              errorMessage = "激活码无效，请检查后重试"
-              showError = true
-            }
-          }
-        },
+        onClick = { doActivate(code) },
         modifier = Modifier
           .fillMaxWidth()
           .height(50.dp),
@@ -164,13 +164,21 @@ fun ActivationScreen(
           contentColor = Color.Black,
         ),
         shape = RoundedCornerShape(12.dp),
-        enabled = code.isNotBlank(),
+        enabled = code.isNotBlank() && !isLoading,
       ) {
-        Text(
-          text = "激活",
-          fontSize = 16.sp,
-          fontWeight = FontWeight.SemiBold,
-        )
+        if (isLoading) {
+          CircularProgressIndicator(
+            color = Color.Black,
+            modifier = Modifier.size(22.dp),
+            strokeWidth = 2.dp,
+          )
+        } else {
+          Text(
+            text = "激活",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+          )
+        }
       }
 
       Spacer(modifier = Modifier.height(32.dp))

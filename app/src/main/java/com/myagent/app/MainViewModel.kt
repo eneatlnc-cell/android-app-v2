@@ -96,12 +96,14 @@ class MainViewModel(
   private val _isActivated = MutableStateFlow(activationManager.isActivated())
   val isActivated: StateFlow<Boolean> = _isActivated.asStateFlow()
 
-  fun activate(code: String): Boolean {
-    val success = activationManager.activate(code)
-    if (success) {
-      _isActivated.value = true
+  fun activate(code: String, onResult: (Boolean) -> Unit) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val success = activationManager.activate(code)
+      if (success) {
+        _isActivated.value = true
+      }
+      onResult(success)
     }
-    return success
   }
 
   // --- 视频画质 ---

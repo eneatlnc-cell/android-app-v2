@@ -2,6 +2,8 @@ package com.myagent.app.model
 
 import android.content.Context
 import android.util.Log
+import com.myagent.app.activation.ActivationManager
+import com.myagent.app.activation.AuthApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -24,27 +26,35 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * 模型安装器 — 从阿里云 OSS 下载 .litertlm 模型到外部存储，支持断点续传和 SHA256 校验。
+ * 模型安装器 — 从 TOS 下载 .litertlm 模型到外部存储，支持断点续传和 SHA256 校验。
  *
  * v2.0：端侧推理模型（~3.66 GB），.litertlm 格式，LiteRT-LM 引擎。
  *
+ * 下载策略（两层）：
+ * 1. 鉴权下载（正式版）：通过 activationManager 获取 token → AuthApi 换预签名 URL → 私有读
+ * 2. 公读下载（测试版）：直接用公读 CDN URL，无需 token
+ * 两层自动切换，无需改代码。
+ *
  * 策略：
- * - 从阿里云 OSS 下载（国内高速，稳定可靠）
  * - 支持 HTTP Range 断点续传
  * - 下载完成后 SHA256 校验
  * - 模型文件存储在外部存储（getExternalFilesDir），清除数据/缓存不会删除
  * - 自动从旧内部存储路径迁移已有模型文件
  */
-class ModelInstaller(private val context: Context) {
+class ModelInstaller(
+  private val context: Context,
+  private val activationManager: ActivationManager? = null,
+) {
   companion object {
     const val MODEL_FILE_NAME = "mynagent-v1-it.litertlm"
-
-    private const val DOWNLOAD_URL =
-      "https://memento.tos-cn-beijing.volces.com/memento-E4B-it.litertlm"
 
     /** SHA256 校验值 */
     private const val EXPECTED_SHA256 =
       "0B2A8980CE155FD97673D8E820B4D29D9C7D99B8FA6806F425D969B145BD52E0"
+
+    /** 公读 CDN 地址（兜底，测试阶段使用） */
+    private const val PUBLIC_DOWNLOAD_URL =
+      "https://memento.tos-cn-beijing.volces.com/memento-E4B-it.litertlm"
 
     private const val BUFFER_SIZE = 8192
     private const val CONNECT_TIMEOUT_MS = 15_000
@@ -89,6 +99,26 @@ class ModelInstaller(private val context: Context) {
   }
 
   /**
+   * 解析下载 URL。鉴权优先，公读兜底。
+   *
+   * 1. 有 activationManager + token → 调用 AuthApi.getDownloadUrl(token) 换预签名 URL
+   * 2. 否则 → 直接用公读 CDN URL
+   */
+  private fun resolveDownloadUrl(): String {
+    val token = activationManager?.getToken()
+    if (token != null && AuthApi.isOnline) {
+      val signedUrl = AuthApi.getDownloadUrl(token)
+      if (signedUrl != null) {
+        Log.i("ModelInstaller", "Using authenticated download URL")
+        return signedUrl
+      }
+      Log.w("ModelInstaller", "AuthApi returned null URL, falling back to public CDN")
+    }
+    Log.i("ModelInstaller", "Using public CDN download URL")
+    return PUBLIC_DOWNLOAD_URL
+  }
+
+  /**
    * 检查模型是否已安装且 SHA256 校验通过。
    */
   fun isModelReady(): Boolean {
@@ -127,7 +157,8 @@ class ModelInstaller(private val context: Context) {
 
     try {
       // —— 第 1 步：获取文件大小 ——
-      val totalSize = fetchContentLength(DOWNLOAD_URL)
+      val downloadUrl = resolveDownloadUrl()
+      val totalSize = fetchContentLength(downloadUrl)
       if (totalSize <= 0) {
         emit(ModelDownloadState.Failed("无法获取模型文件信息，请检查网络连接"))
         return@flow
@@ -144,7 +175,7 @@ class ModelInstaller(private val context: Context) {
         val downloadJob = launch(Dispatchers.IO) {
           withContext(NonCancellable) {
             try {
-              downloadFile(DOWNLOAD_URL, modelFile, existingBytes, totalSize) { downloaded, speed ->
+              downloadFile(downloadUrl, modelFile, existingBytes, totalSize) { downloaded, speed ->
                 progressChannel.trySend(downloaded to speed)
               }
             } finally {
@@ -199,7 +230,8 @@ class ModelInstaller(private val context: Context) {
     emit(ModelDownloadState.Downloading(0, 0, 0, 0))
 
     try {
-      val totalSize = fetchContentLength(DOWNLOAD_URL)
+      val downloadUrl = resolveDownloadUrl()
+      val totalSize = fetchContentLength(downloadUrl)
       if (totalSize <= 0) {
         emit(ModelDownloadState.Failed("无法获取模型文件信息，请检查网络连接"))
         return@flow
@@ -212,7 +244,7 @@ class ModelInstaller(private val context: Context) {
         val downloadJob = launch(Dispatchers.IO) {
           withContext(NonCancellable) {
             try {
-              downloadFile(DOWNLOAD_URL, modelFile, existingBytes, totalSize) { downloaded, speed ->
+              downloadFile(downloadUrl, modelFile, existingBytes, totalSize) { downloaded, speed ->
                 progressChannel.trySend(downloaded to speed)
               }
             } finally {

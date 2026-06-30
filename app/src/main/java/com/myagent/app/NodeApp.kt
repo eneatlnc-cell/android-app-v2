@@ -22,7 +22,7 @@ class NodeApp : Application() {
   val memoryManager: MemoryManager by lazy { MemoryManager(this) }
   val personaManager: PersonaManager by lazy { PersonaManager(this) }
   val activationManager: ActivationManager by lazy { ActivationManager(this) }
-  val modelInstaller: ModelInstaller by lazy { ModelInstaller(this) }
+  val modelInstaller: ModelInstaller by lazy { ModelInstaller(this, activationManager) }
 
   @Volatile private var runtimeInstance: NodeRuntime? = null
 

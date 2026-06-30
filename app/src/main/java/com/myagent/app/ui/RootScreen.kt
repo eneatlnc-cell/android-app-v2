@@ -71,14 +71,8 @@ fun RootScreen(viewModel: MainViewModel) {
     // 步骤2：激活页
     composable(Routes.ACTIVATION) {
       ActivationScreen(
-        onActivate = { code ->
-          val success = viewModel.activate(code)
-          if (success) {
-            navController.navigate(Routes.ONBOARDING) {
-              popUpTo(Routes.ACTIVATION) { inclusive = true }
-            }
-          }
-          success
+        onActivate = { code, onResult ->
+          viewModel.activate(code, onResult = onResult)
         },
         modifier = Modifier.fillMaxSize(),
       )
