@@ -71,9 +71,10 @@ fun ChatInputBar(
       .padding(horizontal = 8.dp, vertical = 6.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    // 语音入口 — 长按录音，松开发送
+    // 语音入口 — 长按录音，松开发送；加载中禁用
     IconButton(
       onClick = {
+        if (isLoading) return@IconButton
         if (isRecording) {
           stopRecording(recorder, audioFile) { file -> onSendVoice(Uri.fromFile(file)) }
           recorder = null
@@ -88,6 +89,7 @@ fun ChatInputBar(
         }
       },
       modifier = Modifier.size(44.dp),
+      enabled = !isLoading,
     ) {
       Icon(
         imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
@@ -98,10 +100,11 @@ fun ChatInputBar(
       )
     }
 
-    // 图片入口
+    // 图片入口 — 加载中禁用，防止多模态输入与推理冲突导致闪退
     IconButton(
-      onClick = { imagePicker.launch("image/*") },
+      onClick = { if (!isLoading) imagePicker.launch("image/*") },
       modifier = Modifier.size(44.dp),
+      enabled = !isLoading,
     ) {
       Icon(
         imageVector = Icons.Default.Image,

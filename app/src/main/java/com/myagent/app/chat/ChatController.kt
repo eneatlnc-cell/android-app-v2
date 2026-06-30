@@ -83,6 +83,7 @@ class ChatController(
   /**
    * 将 content:// URI 复制到缓存目录，返回绝对文件路径。
    * 图片传给 LiteRT-LM 需要绝对路径（Content.ImageFile）。
+   * 限制单张图片最大 50MB，防止 OOM。
    */
   private fun resolveImagePath(uri: Uri): String? {
     return try {
@@ -91,15 +92,26 @@ class ChatController(
         return uri.path
       }
 
-      // content:// URI → 复制到缓存
+      // 检查文件大小，超过 50MB 拒绝处理
+      val size = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1
+      if (size > 50 * 1024 * 1024) {
+        Log.w(TAG, "Image too large: ${size / 1024 / 1024}MB, max 50MB")
+        return null
+      }
+
+      // content:// URI → 缓冲复制到缓存
       val ext = uri.getExtension() ?: "jpg"
       val file = File(cacheDir, "img_${UUID.randomUUID()}.$ext")
       contentResolver.openInputStream(uri)?.use { input ->
         FileOutputStream(file).use { output ->
-          input.copyTo(output)
+          val buffer = ByteArray(8192)
+          var bytesRead: Int
+          while (input.read(buffer).also { bytesRead = it } != -1) {
+            output.write(buffer, 0, bytesRead)
+          }
         }
       }
-      Log.i(TAG, "Resolved image URI to: ${file.absolutePath}")
+      Log.i(TAG, "Resolved image URI to: ${file.absolutePath} (${file.length() / 1024}KB)")
       file.absolutePath
     } catch (e: Exception) {
       Log.e(TAG, "Failed to resolve image URI: ${e.message}")
@@ -180,9 +192,15 @@ class ChatController(
         } else {
           modelLoader.generate(fullPrompt)
         }
+        // 流式输出节流：每 50ms 最多更新一次 StateFlow，避免高频 token 导致 Compose 过度重组
+        var lastStreamUpdate = 0L
         inferenceFlow.collect { chunk ->
           fullResponse.append(chunk)
-          _streamingText.value = fullResponse.toString()
+          val now = System.currentTimeMillis()
+          if (now - lastStreamUpdate >= 50) {
+            _streamingText.value = fullResponse.toString()
+            lastStreamUpdate = now
+          }
         }
 
         val rawContent = fullResponse.toString()
@@ -233,7 +251,7 @@ class ChatController(
             role = "assistant",
             content = action.prompt,
             type = "image",
-            attachmentUri = file.toURI().toString(),
+            attachmentUri = Uri.fromFile(file).toString(),
           )
           _messages.value = _messages.value + imageMsg
         } catch (e: Exception) {
@@ -255,7 +273,7 @@ class ChatController(
             role = "assistant",
             content = action.prompt,
             type = "video",
-            attachmentUri = videoFile.toURI().toString(),
+            attachmentUri = Uri.fromFile(videoFile).toString(),
           )
           _messages.value = _messages.value.map {
             if (it.id == progressId) videoMsg else it

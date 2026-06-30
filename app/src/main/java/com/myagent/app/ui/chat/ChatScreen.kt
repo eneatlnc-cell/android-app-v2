@@ -63,10 +63,10 @@ fun ChatScreen(
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
 
-  // 自动滚动到最新消息
+  // 自动滚动到最新消息 — 使用 scrollToItem 而非 animateScrollToItem，避免每 token 触发动画卡顿
   LaunchedEffect(messages.size, streamingText) {
     if (messages.isNotEmpty()) {
-      listState.animateScrollToItem(messages.size - 1)
+      listState.scrollToItem(messages.size - 1)
     }
   }
 
