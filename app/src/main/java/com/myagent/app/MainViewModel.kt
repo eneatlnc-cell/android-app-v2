@@ -116,7 +116,7 @@ class MainViewModel(
    */
   fun setForeground(value: Boolean) {
     foreground = value
-    if (value && prefs.onboardingCompleted.value) {
+    if (value) {
       queueRuntimeStartup()
     }
     runtimeRef.value?.setForeground(value)

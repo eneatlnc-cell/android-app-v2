@@ -6,7 +6,6 @@ import com.myagent.app.chat.OutgoingAttachment
 import com.myagent.app.memory.MemoryManager
 import com.myagent.app.model.LocalModelLoader
 import com.myagent.app.model.ModelDownloadState
-import com.myagent.app.model.ModelInstaller
 import com.myagent.app.model.PersonaManager
 import com.myagent.app.model.PersonaType
 import com.myagent.app.multimodal.MultiModalDispatcher
@@ -38,8 +37,8 @@ class NodeRuntime(
     private const val KEY_VIDEO_CONFIG = "video.config"
   }
 
-  // 模型安装器
-  val modelInstaller = ModelInstaller(app)
+  // 模型安装器 — 共享 NodeApp 单例，确保全 App 一致
+  val modelInstaller = app.modelInstaller
 
   // 本地模型加载器 — 模型下载完成后才初始化推理引擎
   val modelLoader: LocalModelLoader = run {

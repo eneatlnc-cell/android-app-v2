@@ -2,12 +2,15 @@ package com.myagent.app.model
 
 import android.content.Context
 import android.util.Log
+import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -41,10 +44,26 @@ class LiteRtEngine(private val context: Context) {
    */
   fun init(modelPath: String, maxTokens: Int = 512): Boolean {
     try {
-      val engineConfig = EngineConfig(modelPath = modelPath)
+      // CPU 多线程：Kirin 9020 有 4 个性能核，setNumThreads=4
+      // 后续可升级为 Backend.GPU() 启用 GPU 加速
+      val engineConfig = EngineConfig(
+        modelPath = modelPath,
+        backend = Backend.CPU(numOfThreads = 4),
+        maxNumTokens = 4096, // 大 KV Cache，利用 16GB RAM
+        cacheDir = context.cacheDir.absolutePath,
+      )
       engine = Engine(engineConfig).also { it.initialize() }
-      conversation = engine!!.createConversation()
-      Log.i(TAG, "LiteRT-LM engine ready: $modelPath")
+
+      // 采样配置：平衡创造性与稳定性
+      val conversationConfig = ConversationConfig(
+        samplerConfig = SamplerConfig(
+          topK = 40,
+          topP = 0.95,
+          temperature = 0.7,
+        ),
+      )
+      conversation = engine!!.createConversation(conversationConfig)
+      Log.i(TAG, "LiteRT-LM engine ready: $modelPath (CPU x4, maxTokens=4096)")
       return true
     } catch (e: Exception) {
       Log.e(TAG, "Init failed: ${e.message}", e)

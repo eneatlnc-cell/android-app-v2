@@ -5,6 +5,7 @@ import android.content.ComponentCallbacks2
 import android.os.StrictMode
 import com.myagent.app.activation.ActivationManager
 import com.myagent.app.memory.MemoryManager
+import com.myagent.app.model.ModelInstaller
 import com.myagent.app.model.PersonaManager
 import com.myagent.app.multimodal.MultiModalDispatcher
 
@@ -21,6 +22,7 @@ class NodeApp : Application() {
   val memoryManager: MemoryManager by lazy { MemoryManager(this) }
   val personaManager: PersonaManager by lazy { PersonaManager(this) }
   val activationManager: ActivationManager by lazy { ActivationManager(this) }
+  val modelInstaller: ModelInstaller by lazy { ModelInstaller(this) }
 
   @Volatile private var runtimeInstance: NodeRuntime? = null
 

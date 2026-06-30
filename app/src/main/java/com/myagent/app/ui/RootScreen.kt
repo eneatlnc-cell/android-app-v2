@@ -1,12 +1,14 @@
 package com.myagent.app.ui
 
 import com.myagent.app.MainViewModel
+import com.myagent.app.NodeApp
 import com.myagent.app.model.ModelDownloadState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -30,11 +32,12 @@ fun RootScreen(viewModel: MainViewModel) {
   val isActivated by viewModel.isActivated.collectAsState()
   val onboardingCompleted by viewModel.onboardingCompleted.collectAsState()
   val downloadState by viewModel.downloadState.collectAsState()
+  val context = LocalContext.current
 
-  // 模型就绪判断：
-  // - Completed 直接通过
-  // - onboarding 已完成 + Idle（Runtime 未启动时的默认值）→ 信任上次已下载
-  val modelReady = when (downloadState) {
+  // 模型就绪判断：直接检查文件系统，不依赖 downloadState flow（避免 Runtime 未创建时的循环依赖）
+  // 配合 downloadState 做二次确认：文件存在 + 状态非失败
+  val modelFileExists = (context.applicationContext as NodeApp).modelInstaller.isModelReady()
+  val modelReady = modelFileExists || when (downloadState) {
     is ModelDownloadState.Completed -> true
     is ModelDownloadState.Idle -> onboardingCompleted
     else -> false
