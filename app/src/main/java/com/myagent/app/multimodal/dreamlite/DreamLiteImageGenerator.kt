@@ -9,8 +9,6 @@ import android.util.Log
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.*
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * 图像生成器 — HTML 渲染方案（与 HyperFrames 共用 WebView 渲染管线）。
@@ -107,17 +105,21 @@ class DreamLiteImageGenerator(
     return wv
   }
 
-  private fun loadHtmlAndWait(wv: WebView, html: String) {
-    val latch = CountDownLatch(1)
+  private suspend fun loadHtmlAndWait(wv: WebView, html: String) {
+    var loaded = false
     wv.webViewClient = object : WebViewClient() {
       override fun onPageFinished(view: WebView?, url: String?) {
-        latch.countDown()
+        loaded = true
       }
     }
     wv.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-    try {
-      latch.await(WEBVIEW_TIMEOUT_SEC, TimeUnit.SECONDS)
-    } catch (_: InterruptedException) {}
+    // 用 delay 轮询代替 CountDownLatch.await()，不阻塞主线程
+    // 主线程必须保持空闲才能处理 WebView 的 onPageFinished 回调
+    withTimeout(WEBVIEW_TIMEOUT_SEC * 1000L) {
+      while (!loaded) {
+        delay(100)
+      }
+    }
   }
 
   private fun captureFrame(wv: WebView, targetWidth: Int, targetHeight: Int): Bitmap? {

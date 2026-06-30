@@ -192,16 +192,21 @@ class ChatController(
         } else {
           modelLoader.generate(fullPrompt)
         }
-        // 流式输出节流：每 50ms 最多更新一次 StateFlow，避免高频 token 导致 Compose 过度重组
+        // 流式输出节流：每 50ms 最多更新一次 StateFlow
+        // 但首 token 不节流，确保用户立即看到反馈
         var lastStreamUpdate = 0L
+        var isFirstToken = true
         inferenceFlow.collect { chunk ->
           fullResponse.append(chunk)
           val now = System.currentTimeMillis()
-          if (now - lastStreamUpdate >= 50) {
+          if (isFirstToken || now - lastStreamUpdate >= 50) {
             _streamingText.value = fullResponse.toString()
             lastStreamUpdate = now
+            isFirstToken = false
           }
         }
+        // 确保最终文本被刷新（最后一个 chunk 可能被节流跳过）
+        _streamingText.value = fullResponse.toString()
 
         val rawContent = fullResponse.toString()
 
