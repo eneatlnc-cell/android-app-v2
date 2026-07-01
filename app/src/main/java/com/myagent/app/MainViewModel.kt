@@ -177,7 +177,13 @@ class MainViewModel(
 
   fun sendImage(uri: Uri, caption: String = "") {
     try {
-      ensureRuntime().sendImage(uri.toString(), caption)
+      val runtime = runtimeRef.value
+      if (runtime == null) {
+        Log.w("MainViewModel", "Runtime not ready, queueing startup")
+        queueRuntimeStartup()
+        return
+      }
+      runtime.sendImage(uri.toString(), caption)
     } catch (e: Exception) {
       Log.e("MainViewModel", "sendImage failed", e)
     }
@@ -185,7 +191,13 @@ class MainViewModel(
 
   fun sendVideo(uri: Uri, caption: String = "") {
     try {
-      ensureRuntime().sendVideo(uri.toString(), caption)
+      val runtime = runtimeRef.value
+      if (runtime == null) {
+        Log.w("MainViewModel", "Runtime not ready, queueing startup")
+        queueRuntimeStartup()
+        return
+      }
+      runtime.sendVideo(uri.toString(), caption)
     } catch (e: Exception) {
       Log.e("MainViewModel", "sendVideo failed", e)
     }

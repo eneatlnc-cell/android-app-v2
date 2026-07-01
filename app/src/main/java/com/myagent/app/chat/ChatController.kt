@@ -176,7 +176,7 @@ class ChatController(
 
       Log.i(TAG, "Compressed image: ${srcW}x${srcH} → ${fw}x${fh} (${outFile.length() / 1024}KB)")
       outFile.absolutePath
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       Log.e(TAG, "Image compression failed: ${e.message}")
       null
     }
@@ -202,8 +202,6 @@ class ChatController(
     val trimmed = message.trim()
     if (trimmed.isEmpty() && attachments.isEmpty() && imagePaths.isEmpty()) return
 
-    currentStreamJob?.cancel()
-
     val userMessage = ChatMessage(
       id = UUID.randomUUID().toString(),
       role = "user",
@@ -218,6 +216,21 @@ class ChatController(
     }
     memoryManager.saveMemory(role = "user", content = memoryLabel)
 
+    startInference(
+      promptText = trimmed.ifEmpty { "请描述这张图片" },
+      imagePaths = imagePaths,
+    )
+  }
+
+  /**
+   * 启动推理流程 — 不添加用户消息（由调用方负责）。
+   * sendImage / sendVideo 已自行添加用户消息，直接调用此方法进入推理。
+   */
+  private fun startInference(
+    promptText: String,
+    imagePaths: List<String>,
+  ) {
+    currentStreamJob?.cancel()
     _errorText.value = null
     _isLoading.value = true
     // streamingText 保持 null，直到首 token 到达才设置，避免空字符串导致三个气泡同时出现
@@ -226,7 +239,6 @@ class ChatController(
       try {
         val systemPrompt = PersonaManager.getSystemPrompt()
         val memoryContext = memoryManager.getFullContext()
-        val promptText = trimmed.ifEmpty { "请描述这张图片" }
 
         val fullPrompt = buildString {
           append(systemPrompt)
@@ -239,6 +251,17 @@ class ChatController(
           append("Memento: ")
         }
 
+        // 多模态推理前校验图片有效性，避免损坏图片导致原生崩溃
+        val validPaths = if (imagePaths.isNotEmpty()) {
+          imagePaths.filter { path ->
+            val file = File(path)
+            if (!file.exists() || file.length() == 0L) {
+              Log.w(TAG, "Skipping invalid image: $path")
+              false
+            } else true
+          }
+        } else emptyList()
+
         // 流式推理 — 有图片时走多模态路径
         val assistantId = UUID.randomUUID().toString()
         val assistantMessage = ChatMessage(
@@ -249,14 +272,14 @@ class ChatController(
         _messages.update { it + assistantMessage }
 
         val fullResponse = StringBuilder()
-        val inferenceFlow = if (imagePaths.isNotEmpty()) {
-          Log.i(TAG, "Multimodal inference: text + ${imagePaths.size} image(s)")
-          modelLoader.generateWithImages(fullPrompt, imagePaths)
+        val inferenceFlow = if (validPaths.isNotEmpty()) {
+          Log.i(TAG, "Multimodal inference: text + ${validPaths.size} image(s)")
+          modelLoader.generateWithImages(fullPrompt, validPaths)
         } else {
           modelLoader.generate(fullPrompt)
         }
+
         // 流式输出节流：每 50ms 最多更新一次 StateFlow
-        // 但首 token 不节流，确保用户立即看到反馈
         var lastStreamUpdate = 0L
         var isFirstToken = true
         inferenceFlow.collect { chunk ->
@@ -268,7 +291,7 @@ class ChatController(
             isFirstToken = false
           }
         }
-        // 确保最终文本被刷新（最后一个 chunk 可能被节流跳过）
+        // 确保最终文本被刷新
         _streamingText.value = fullResponse.toString()
 
         val rawContent = fullResponse.toString()
@@ -376,20 +399,28 @@ class ChatController(
     )
     _messages.update { it + message }
 
-    // 将图片解析（文件 I/O + Bitmap 解码）放到 IO 线程，避免主线程 ANR
+    // 图片解析（文件 I/O + Bitmap 解码）放到 IO 线程，避免主线程 ANR
     scope.launch {
-      val imagePath = withContext(Dispatchers.IO) {
-        resolveImagePath(Uri.parse(imageUri))
+      try {
+        val imagePath = withContext(Dispatchers.IO) {
+          resolveImagePath(Uri.parse(imageUri))
+        }
+        if (imagePath == null) {
+          _errorText.value = "图片处理失败，请检查图片是否过大或格式不支持"
+          return@launch
+        }
+        memoryManager.saveMemory(role = "user", content = "[图片]")
+        startInference(
+          promptText = caption.ifEmpty { "请描述这张图片" },
+          imagePaths = listOf(imagePath),
+        )
+      } catch (e: OutOfMemoryError) {
+        Log.e(TAG, "sendImage OOM: ${e.message}")
+        _errorText.value = "图片过大，内存不足，请选择较小的图片"
+      } catch (e: Exception) {
+        Log.e(TAG, "sendImage failed: ${e.message}", e)
+        _errorText.value = "图片处理失败: ${e.message}"
       }
-      if (imagePath == null) {
-        _errorText.value = "图片处理失败，请检查图片是否过大或格式不支持"
-        return@launch
-      }
-      val imagePaths = listOf(imagePath)
-      sendMessage(
-        message = caption.ifEmpty { "请描述这张图片" },
-        imagePaths = imagePaths,
-      )
     }
   }
 
@@ -434,8 +465,9 @@ class ChatController(
         }
 
         Log.i(TAG, "Video input: extracted ${frames.size} frames")
-        sendMessage(
-          message = caption.ifEmpty { "请描述这个视频的内容" },
+        memoryManager.saveMemory(role = "user", content = "[视频]")
+        startInference(
+          promptText = caption.ifEmpty { "请描述这个视频的内容" },
           imagePaths = frames,
         )
       } catch (e: OutOfMemoryError) {
