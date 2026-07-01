@@ -1,12 +1,16 @@
 package com.myagent.app.chat
 
 import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.myagent.app.memory.MemoryManager
 import com.myagent.app.model.LocalModelLoader
 import com.myagent.app.model.PersonaManager
@@ -308,15 +312,19 @@ class ChatController(
       "image" -> {
         try {
           val bitmap = MultiModalDispatcher.generateImage(action.prompt)
-          val file = File(cacheDir, "gen_${UUID.randomUUID()}.png")
+          // 保存到 cacheDir/images/ 子目录，匹配 FileProvider 的路径映射
+          val imagesDir = File(cacheDir, "images").also { it.mkdirs() }
+          val file = File(imagesDir, "gen_${UUID.randomUUID()}.png")
           FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+          val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
           Log.i(TAG, "Generated image saved: ${file.absolutePath} (${file.length() / 1024}KB)")
           val imageMsg = ChatMessage(
             id = UUID.randomUUID().toString(),
             role = "assistant",
             content = action.prompt,
             type = "image",
-            attachmentUri = Uri.fromFile(file).toString(),
+            attachmentUri = uri.toString(),
+            localPath = file.absolutePath,
           )
           _messages.update { it + imageMsg }
         } catch (e: Exception) {
@@ -337,22 +345,22 @@ class ChatController(
           if (videoFile.length() == 0L) {
             throw Exception("视频文件为空，渲染可能超时")
           }
+          val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", videoFile)
           Log.i(TAG, "Generated video saved: ${videoFile.absolutePath} (${videoFile.length() / 1024}KB)")
           val videoMsg = ChatMessage(
             id = UUID.randomUUID().toString(),
             role = "assistant",
             content = action.prompt,
             type = "video",
-            attachmentUri = Uri.fromFile(videoFile).toString(),
+            attachmentUri = uri.toString(),
+            localPath = videoFile.absolutePath,
           )
-          _messages.value = _messages.value.map {
-            if (it.id == progressId) videoMsg else it
-          }
+          _messages.update { it.map { m -> if (m.id == progressId) videoMsg else m } }
         } catch (e: Exception) {
           Log.e(TAG, "Video generation failed: ${e.message}", e)
-          _messages.value = _messages.value.map {
-            if (it.id == progressId) it.copy(content = "视频生成失败: ${e.message}") else it
-          }
+          _messages.update { it.map { m ->
+            if (m.id == progressId) m.copy(content = "视频生成失败: ${e.message}") else m
+          } }
         }
       }
     }

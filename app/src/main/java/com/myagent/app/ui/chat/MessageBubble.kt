@@ -1,7 +1,14 @@
 package com.myagent.app.ui.chat
 
 import com.myagent.app.chat.ChatMessage
+import android.content.ContentValues
+import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VolumeUp
@@ -29,14 +37,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.myagent.app.ui.LocalSkinColors
+import java.io.File
 
 /**
  * 多模态消息气泡 — 支持文字、图片、语音、视频。
  *
- * 根据消息角色和类型自动切换布局与配色。
+ * - 图片气泡：点击 → 系统图片查看器
+ * - 视频气泡：点击 → 系统视频播放器
+ * - 都支持"保存到相册"按钮
  */
 @Composable
 fun MessageBubble(
@@ -69,21 +81,43 @@ fun MessageBubble(
         .padding(12.dp),
     ) {
       MessageContent(message = message, isUser = isUser)
-      // TTS 播放按钮 — 仅 AI 消息
-      if (!isUser && message.content.isNotEmpty()) {
+      // 操作栏：TTS / 保存到相册
+      if (!isUser) {
         Spacer(modifier = Modifier.height(4.dp))
-        IconButton(
-          onClick = { onPlayTts(message.content) },
-          modifier = Modifier
-            .size(28.dp)
-            .align(Alignment.End),
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          Icon(
-            imageVector = Icons.Default.VolumeUp,
-            contentDescription = "播放语音",
-            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-            modifier = Modifier.size(16.dp),
-          )
+          // 保存到相册（图片/视频）
+          if (message.type == "image" || message.type == "video") {
+            val ctx = LocalContext.current
+            IconButton(
+              onClick = { saveToGallery(ctx, message) },
+              modifier = Modifier.size(28.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = "保存到相册",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp),
+              )
+            }
+          }
+          // TTS 播放按钮
+          if (message.content.isNotEmpty()) {
+            IconButton(
+              onClick = { onPlayTts(message.content) },
+              modifier = Modifier.size(28.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Default.VolumeUp,
+                contentDescription = "播放语音",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp),
+              )
+            }
+          }
         }
       }
     }
@@ -112,17 +146,23 @@ private fun ImageBubble(
   isUser: Boolean,
   contentColor: androidx.compose.ui.graphics.Color,
 ) {
-  if (message.attachmentUri != null) {
+  val context = LocalContext.current
+  val uri = message.attachmentUri
+
+  if (uri != null) {
     AsyncImage(
-      model = ImageRequest.Builder(LocalContext.current)
-        .data(message.attachmentUri)
+      model = ImageRequest.Builder(context)
+        .data(uri)
         .crossfade(true)
         .build(),
-      contentDescription = "图片",
+      contentDescription = "图片（点击查看大图）",
       modifier = Modifier
         .width(200.dp)
         .height(150.dp)
-        .clip(RoundedCornerShape(8.dp)),
+        .clip(RoundedCornerShape(8.dp))
+        .clickable {
+          openWithSystemViewer(context, uri, "image/*")
+        },
       contentScale = ContentScale.Crop,
     )
   } else {
@@ -178,6 +218,9 @@ private fun VideoBubble(
   isUser: Boolean,
   contentColor: androidx.compose.ui.graphics.Color,
 ) {
+  val context = LocalContext.current
+  val uri = message.attachmentUri
+
   Box(
     modifier = Modifier
       .width(200.dp)
@@ -186,13 +229,19 @@ private fun VideoBubble(
       .background(
         if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f)
         else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
-      ),
+      )
+      .clickable(enabled = uri != null) {
+        if (uri != null) {
+          openWithSystemViewer(context, uri, "video/*")
+        }
+      },
     contentAlignment = Alignment.Center,
   ) {
     Icon(
       imageVector = Icons.Default.PlayArrow,
-      contentDescription = "播放视频",
-      tint = contentColor.copy(alpha = if (isUser) 0.6f else 0.5f),
+      contentDescription = if (uri != null) "点击播放视频" else "视频",
+      tint = if (uri != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+      else contentColor.copy(alpha = if (isUser) 0.6f else 0.5f),
       modifier = Modifier.size(44.dp),
     )
   }
@@ -217,5 +266,92 @@ private fun TextBubble(
       color = contentColor.copy(alpha = 0.6f),
       fontSize = 12.sp,
     )
+  }
+}
+
+// ── 工具函数 ──
+
+/**
+ * 用系统查看器打开媒体文件。
+ * 通过 content:// URI（FileProvider）或 file:// URI 启动 ACTION_VIEW Intent。
+ */
+private fun openWithSystemViewer(context: android.content.Context, uriString: String, mimeType: String) {
+  try {
+    val uri = Uri.parse(uriString)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, mimeType)
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    // 检查是否有应用能处理
+    if (intent.resolveActivity(context.packageManager) != null) {
+      context.startActivity(intent)
+    } else {
+      Toast.makeText(context, "未找到可用的播放器", Toast.LENGTH_SHORT).show()
+    }
+  } catch (e: Exception) {
+    Toast.makeText(context, "打开失败: ${e.message}", Toast.LENGTH_SHORT).show()
+  }
+}
+
+/**
+ * 保存媒体文件到系统相册（Pictures/Memento）。
+ * 优先使用 MediaStore API（Android 10+），兼容旧版本直接复制文件。
+ */
+private fun saveToGallery(context: android.content.Context, message: ChatMessage) {
+  val localPath = message.localPath
+  if (localPath == null) {
+    Toast.makeText(context, "文件路径不可用", Toast.LENGTH_SHORT).show()
+    return
+  }
+  val file = File(localPath)
+  if (!file.exists()) {
+    Toast.makeText(context, "文件不存在，可能已被清理", Toast.LENGTH_SHORT).show()
+    return
+  }
+  try {
+    val isVideo = message.type == "video"
+    val mimeType = if (isVideo) "video/mp4" else "image/png"
+    val relativePath = if (isVideo) "${Environment.DIRECTORY_MOVIES}/Memento"
+    else "${Environment.DIRECTORY_PICTURES}/Memento"
+
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+      val values = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+        put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+      }
+      val uri = context.contentResolver.insert(
+        if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        values,
+      )
+      if (uri != null) {
+        context.contentResolver.openOutputStream(uri)?.use { out ->
+          file.inputStream().use { it.copyTo(out) }
+        }
+        Toast.makeText(context, "已保存到相册", Toast.LENGTH_SHORT).show()
+      } else {
+        throw Exception("无法创建 MediaStore 条目")
+      }
+    } else {
+      @Suppress("DEPRECATION")
+      val destDir = File(
+        Environment.getExternalStoragePublicDirectory(
+          if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
+        ),
+        "Memento",
+      ).also { it.mkdirs() }
+      val dest = File(destDir, file.name)
+      file.copyTo(dest, overwrite = true)
+      // 通知媒体扫描
+      val intent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).apply {
+        data = Uri.fromFile(dest)
+      }
+      context.sendBroadcast(intent)
+      Toast.makeText(context, "已保存到相册", Toast.LENGTH_SHORT).show()
+    }
+  } catch (e: Exception) {
+    Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
   }
 }

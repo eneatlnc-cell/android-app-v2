@@ -16,6 +16,7 @@ data class ChatMessage(
   val type: String = "text",
   val attachmentUri: String? = null,
   val attachmentMimeType: String? = null,
+  val localPath: String? = null, // 本地文件绝对路径，用于保存到相册/打开系统播放器
 )
 
 /**
