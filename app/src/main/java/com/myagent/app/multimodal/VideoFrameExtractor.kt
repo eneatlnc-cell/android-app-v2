@@ -85,7 +85,7 @@ object VideoFrameExtractor {
 
       Log.i(TAG, "Extracted ${frames.size} frames from video")
       frames
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       Log.e(TAG, "Frame extraction failed: ${e.message}", e)
       emptyList()
     } finally {

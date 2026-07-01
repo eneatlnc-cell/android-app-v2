@@ -14,12 +14,14 @@ import com.myagent.app.multimodal.MultiModalDispatcher
 import com.myagent.app.multimodal.VideoFrameExtractor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -366,17 +368,21 @@ class ChatController(
     )
     _messages.update { it + message }
 
-    // 将 content:// URI 转换为文件路径，传给多模态引擎
-    val imagePath = resolveImagePath(Uri.parse(imageUri))
-    if (imagePath == null) {
-      _errorText.value = "图片处理失败，请检查图片是否过大或格式不支持"
-      return
+    // 将图片解析（文件 I/O + Bitmap 解码）放到 IO 线程，避免主线程 ANR
+    scope.launch {
+      val imagePath = withContext(Dispatchers.IO) {
+        resolveImagePath(Uri.parse(imageUri))
+      }
+      if (imagePath == null) {
+        _errorText.value = "图片处理失败，请检查图片是否过大或格式不支持"
+        return@launch
+      }
+      val imagePaths = listOf(imagePath)
+      sendMessage(
+        message = caption.ifEmpty { "请描述这张图片" },
+        imagePaths = imagePaths,
+      )
     }
-    val imagePaths = listOf(imagePath)
-    sendMessage(
-      message = caption.ifEmpty { "请描述这张图片" },
-      imagePaths = imagePaths,
-    )
   }
 
   fun sendVoice(audioUri: String, transcript: String = "") {
@@ -410,29 +416,42 @@ class ChatController(
     )
     _messages.update { it + message }
 
-    // 文件大小检查（> 50MB 拒绝）
-    val fileSize = VideoFrameExtractor.getFileSize(context, Uri.parse(videoUri))
-    if (fileSize > VideoFrameExtractor.MAX_FILE_SIZE) {
-      val sizeMB = fileSize / (1024 * 1024)
-      _errorText.value = "视频文件过大（当前 ${sizeMB} MB，限制 50MB），请选择较短的视频"
-      _isLoading.value = false
-      return
-    }
-
-    // 帧采样
     _errorText.value = null
-    val frames = VideoFrameExtractor.extractFrames(context, Uri.parse(videoUri), cacheDir)
-    if (frames.isEmpty()) {
-      _errorText.value = "视频帧提取失败，请尝试其他视频"
-      _isLoading.value = false
-      return
-    }
 
-    Log.i(TAG, "Video input: extracted ${frames.size} frames")
-    sendMessage(
-      message = caption.ifEmpty { "请描述这个视频的内容" },
-      imagePaths = frames,
-    )
+    // 文件大小检查 + 帧采样全部放到 IO 线程，避免主线程 ANR
+    scope.launch {
+      try {
+        val uri = Uri.parse(videoUri)
+        val fileSize = withContext(Dispatchers.IO) {
+          VideoFrameExtractor.getFileSize(context, uri)
+        }
+        if (fileSize > VideoFrameExtractor.MAX_FILE_SIZE) {
+          val sizeMB = fileSize / (1024 * 1024)
+          _errorText.value = "视频文件过大（当前 ${sizeMB} MB，限制 50MB），请选择较短的视频"
+          return@launch
+        }
+
+        val frames = withContext(Dispatchers.IO) {
+          VideoFrameExtractor.extractFrames(context, uri, cacheDir)
+        }
+        if (frames.isEmpty()) {
+          _errorText.value = "视频帧提取失败，请尝试其他视频"
+          return@launch
+        }
+
+        Log.i(TAG, "Video input: extracted ${frames.size} frames")
+        sendMessage(
+          message = caption.ifEmpty { "请描述这个视频的内容" },
+          imagePaths = frames,
+        )
+      } catch (e: OutOfMemoryError) {
+        Log.e(TAG, "Video frame extraction OOM: ${e.message}")
+        _errorText.value = "视频处理内存不足，请选择较短的视频"
+      } catch (e: Exception) {
+        Log.e(TAG, "Video send failed: ${e.message}", e)
+        _errorText.value = "视频处理失败: ${e.message}"
+      }
+    }
   }
 
   fun abort() {

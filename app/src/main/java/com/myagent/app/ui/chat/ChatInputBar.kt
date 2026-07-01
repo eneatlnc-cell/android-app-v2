@@ -12,7 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,19 +54,23 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * 多模态输入栏 — 加号折叠 + 按住说话。
+ * 多模态输入栏 — 加号折叠 + 按住说话（微信风格）。
  *
  * 布局：
  *   [+] [ 输入框 / 按住说话 ] [发送/停止]
  *
  * 点击加号 → 底部浮层：图片 / 语音 / 视频
  * 点击"语音" → 输入框切换为"按住说话"按钮
+ * 按住说话 → 上滑取消 → 松手发送
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,13 +96,23 @@ fun ChatInputBar(
   // --- 语音模式 ---
   var isVoiceMode by remember { mutableStateOf(false) }
   var isRecording by remember { mutableStateOf(false) }
-  // 使用 AtomicReference 避免闭包捕获过期状态，确保 stopRecording 总能拿到正确的 recorder 引用
+  var isCancelling by remember { mutableStateOf(false) }
   val recorderRef = remember { AtomicReference<MediaRecorder?>(null) }
   val audioFileRef = remember { AtomicReference<File?>(null) }
-  var hasMicPermission by remember { mutableStateOf(false) }
+  var hasMicPermission by remember {
+    mutableStateOf(
+      ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    )
+  }
   val micPermissionLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.RequestPermission()
-  ) { granted -> hasMicPermission = granted }
+  ) { granted ->
+    hasMicPermission = granted
+    if (granted) {
+      // 权限授予后自动进入语音模式（解决"二次确认"问题）
+      isVoiceMode = true
+    }
+  }
 
   // 录音动画
   val recordingScale by animateFloatAsState(
@@ -110,7 +125,7 @@ fun ChatInputBar(
     contract = ActivityResultContracts.GetContent()
   ) { uri: Uri? ->
     if (uri != null) onSendImage(uri)
-    else android.widget.Toast.makeText(context, "已取消选择", android.widget.Toast.LENGTH_SHORT).show()
+    // 用户取消选择时不弹 Toast（是主动行为，不需要反馈）
   }
 
   // --- 视频选择器 ---
@@ -118,7 +133,19 @@ fun ChatInputBar(
     contract = ActivityResultContracts.GetContent()
   ) { uri: Uri? ->
     if (uri != null) onSendVideo(uri)
-    else android.widget.Toast.makeText(context, "已取消选择", android.widget.Toast.LENGTH_SHORT).show()
+  }
+
+  /** 等待浮层关闭后启动文件选择器 */
+  fun launchAfterSheetClose(block: () -> Unit) {
+    showSheet = false
+    keyboardController?.hide()
+    scope.launch {
+      // 等待 ModalBottomSheet 完全关闭（而非硬编码 300ms）
+      sheetState.hide()
+      // 确认浮层已隐藏
+      delay(100)
+      block()
+    }
   }
 
   // ── 加号浮层 ──
@@ -139,26 +166,22 @@ fun ChatInputBar(
           label = "图片",
           description = "从相册选择图片",
           onClick = {
-            showSheet = false
-            scope.launch {
-              delay(300) // 等浮层收起
-              imagePicker.launch("image/*")
-            }
+            launchAfterSheetClose { imagePicker.launch("image/*") }
           },
         )
         // 语音
         SheetOption(
           icon = Icons.Default.Mic,
           label = "语音",
-          description = "按住说话，松手发送",
+          description = "按住说话，松手发送，上滑取消",
           onClick = {
             showSheet = false
             if (!hasMicPermission) {
               micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-              // 权限请求是异步的，不立即进入语音模式
-              return@SheetOption
+              // 权限回调中自动进入语音模式，此处不需要额外处理
+            } else {
+              isVoiceMode = true
             }
-            isVoiceMode = true
           },
         )
         // 视频
@@ -167,11 +190,7 @@ fun ChatInputBar(
           label = "视频",
           description = "从相册选择视频",
           onClick = {
-            showSheet = false
-            scope.launch {
-              delay(300)
-              videoPicker.launch("video/*")
-            }
+            launchAfterSheetClose { videoPicker.launch("video/*") }
           },
         )
       }
@@ -200,69 +219,116 @@ fun ChatInputBar(
     }
 
     if (isVoiceMode) {
-      // ── 语音模式：按住说话 ──
+      // ── 语音模式：按住说话（微信风格）──
       Box(
         modifier = Modifier
           .weight(1f)
           .height(48.dp)
           .clip(RoundedCornerShape(24.dp))
           .background(
-            if (isRecording) MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
+            when {
+              isCancelling -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+              isRecording -> MaterialTheme.colorScheme.errorContainer
+              else -> MaterialTheme.colorScheme.surfaceVariant
+            },
           )
-          .pointerInput(Unit) {
-            detectTapGestures(
-              onPress = {
-                // 权限二次检查
-                if (!hasMicPermission) {
-                  Toast.makeText(context, "请先授予麦克风权限", Toast.LENGTH_SHORT).show()
-                  tryAwaitRelease()
-                  return@detectTapGestures
+          // pointerInput key 绑定 hasMicPermission，确保权限变化后闭包捕获最新值
+          .pointerInput(hasMicPermission) {
+            awaitEachGesture {
+              val down = awaitFirstDown(requireUnconsumed = false)
+              down.consume()
+
+              // 权限检查（使用最新值，因为 key 已绑定 hasMicPermission）
+              if (!hasMicPermission) {
+                Toast.makeText(context, "请先授予麦克风权限", Toast.LENGTH_SHORT).show()
+                // 等待手势结束
+                while (true) {
+                  val e = awaitPointerEvent()
+                  e.changes.forEach { it.consume() }
+                  if (e.changes.all { !it.pressed }) break
                 }
-                // 按下 → 开始录音（IO 线程避免 ANR）
-                isRecording = true
-                var mr: MediaRecorder? = null
-                var file: File? = null
-                try {
-                  file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
-                  mr = createRecorder(context, file)
-                  mr.prepare()
-                  mr.start()
-                  recorderRef.set(mr)
-                  audioFileRef.set(file)
-                } catch (e: Exception) {
-                  Log.e("ChatInputBar", "Recording start failed: ${e.message}", e)
-                  isRecording = false
-                  isVoiceMode = false
-                  Toast.makeText(context, "录音启动失败，请重试", Toast.LENGTH_SHORT).show()
-                  mr?.release()
-                  tryAwaitRelease()
-                  return@detectTapGestures
+                return@awaitEachGesture
+              }
+
+              // 按下 → 开始录音
+              isRecording = true
+              isCancelling = false
+              var cancelled = false
+              var mr: MediaRecorder? = null
+              var file: File? = null
+
+              try {
+                file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
+                mr = createRecorder(context, file)
+                // prepare/start 在 IO 线程执行，避免主线程 ANR
+                withContext(Dispatchers.IO) {
+                  mr!!.prepare()
+                  mr!!.start()
                 }
-                try {
-                  tryAwaitRelease()
-                } finally {
-                  // 松手 → 停止录音并发送
-                  stopRecording(recorderRef.getAndSet(null), audioFileRef.getAndSet(null)) { f ->
-                    onSendVoice(Uri.fromFile(f))
-                  }
-                  isRecording = false
-                  isVoiceMode = false
+                recorderRef.set(mr)
+                audioFileRef.set(file)
+              } catch (e: Exception) {
+                Log.e("ChatInputBar", "Recording start failed: ${e.message}", e)
+                isRecording = false
+                isVoiceMode = false
+                Toast.makeText(context, "录音启动失败，请重试", Toast.LENGTH_SHORT).show()
+                try { mr?.release() } catch (_: Exception) {}
+                // 耗尽剩余手势事件
+                while (true) {
+                  val e = awaitPointerEvent()
+                  e.changes.forEach { it.consume() }
+                  if (e.changes.all { !it.pressed }) break
                 }
-              },
-            )
+                return@awaitEachGesture
+              }
+
+              // 跟踪拖动：上滑超过阈值 → 取消
+              val cancelThreshold = 120f
+              var dragOffset = 0f
+              while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull() ?: break
+                dragOffset = change.position.y - down.position.y
+                cancelled = dragOffset < -cancelThreshold
+                isCancelling = cancelled
+                change.consume()
+                if (!change.pressed) break
+              }
+
+              // 松手 → 停止录音
+              stopRecording(
+                recorder = recorderRef.getAndSet(null),
+                audioFile = audioFileRef.getAndSet(null),
+                cancelled = cancelled,
+              ) { f ->
+                onSendVoice(Uri.fromFile(f))
+              }
+              isRecording = false
+              isCancelling = false
+              if (!cancelled) {
+                isVoiceMode = false
+              }
+            }
           },
         contentAlignment = Alignment.Center,
       ) {
-        Icon(
-          imageVector = if (isRecording) Icons.Default.Mic else Icons.Default.Mic,
-          contentDescription = "按住说话",
-          tint = if (isRecording) MaterialTheme.colorScheme.error
-          else MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier
-            .size(24.dp)
-            .scale(recordingScale),
-        )
+        if (isCancelling) {
+          Text(
+            text = "松开取消",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Default.Mic,
+            contentDescription = "按住说话",
+            tint = if (isRecording) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+              .size(24.dp)
+              .scale(recordingScale),
+          )
+        }
       }
       // 返回文本按钮
       IconButton(
@@ -374,7 +440,7 @@ private fun SheetOption(
 
 // ── 录音工具函数 ──
 
-/** 创建并配置 MediaRecorder，不调用 prepare/start（由调用方在合适线程执行） */
+/** 创建并配置 MediaRecorder，不调用 prepare/start（由调用方在 IO 线程执行） */
 private fun createRecorder(
   context: android.content.Context,
   outputFile: File,
@@ -394,9 +460,14 @@ private fun createRecorder(
   }
 }
 
+/**
+ * 停止录音。
+ * @param cancelled 是否用户主动取消（上滑取消），取消时丢弃录音文件
+ */
 private fun stopRecording(
   recorder: MediaRecorder?,
   audioFile: File?,
+  cancelled: Boolean,
   onComplete: (File) -> Unit,
 ) {
   try {
@@ -409,5 +480,18 @@ private fun stopRecording(
   } catch (e: Exception) {
     Log.e("ChatInputBar", "Recorder release failed: ${e.message}", e)
   }
-  audioFile?.let { onComplete(it) }
+
+  if (cancelled) {
+    // 上滑取消：删除录音文件
+    audioFile?.delete()
+    return
+  }
+
+  // 仅在文件有效时发送
+  if (audioFile != null && audioFile.exists() && audioFile.length() > 0) {
+    onComplete(audioFile)
+  } else {
+    audioFile?.delete()
+    Log.w("ChatInputBar", "Recording file invalid, discarded")
+  }
 }

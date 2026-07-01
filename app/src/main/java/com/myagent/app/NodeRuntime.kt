@@ -38,10 +38,10 @@ class NodeRuntime(
   // 模型安装器 — 共享 NodeApp 单例，确保全 App 一致
   val modelInstaller = app.modelInstaller
 
-  // 本地模型加载器 — 模型下载完成后才初始化推理引擎
-  val modelLoader: LocalModelLoader = run {
+  // 本地模型加载器 — lazy 初始化，避免构造时阻塞调用线程
+  val modelLoader: LocalModelLoader by lazy {
     val modelFile = modelInstaller.getModelPath()
-    val path = if (modelInstaller.isModelReady()) modelFile.absolutePath else null
+    val path = if (modelInstaller.isModelFileExists()) modelFile.absolutePath else null
     LocalModelLoader(app, path).also {
       if (path != null) {
         it.init()
@@ -59,7 +59,7 @@ class NodeRuntime(
   // --- 模型下载状态 ---
 
   private val _downloadState = MutableStateFlow<ModelDownloadState>(
-    if (modelInstaller.isModelReady()) ModelDownloadState.Completed
+    if (modelInstaller.isModelFileExists()) ModelDownloadState.Completed
     else ModelDownloadState.Idle
   )
   val downloadState: StateFlow<ModelDownloadState> = _downloadState.asStateFlow()
@@ -103,7 +103,7 @@ class NodeRuntime(
 
   val isModelReady: Boolean
     get() = _downloadState.value is ModelDownloadState.Completed ||
-      modelInstaller.isModelReady()
+      modelInstaller.isModelFileExists()
 
   // --- UI 状态 ---
 

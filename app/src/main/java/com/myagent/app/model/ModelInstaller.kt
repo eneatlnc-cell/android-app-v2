@@ -120,10 +120,20 @@ class ModelInstaller(
 
   /**
    * 检查模型是否已安装且 SHA256 校验通过。
+   * 注意：这是重量级操作（全量 SHA256），不要在主线程调用。
    */
   fun isModelReady(): Boolean {
     val file = getModelPath()
     return file.exists() && file.length() > 0 && verifyChecksum(file)
+  }
+
+  /**
+   * 轻量级检查：仅判断文件是否存在且大小 > 0，不做 SHA256。
+   * 可在主线程调用，用于 UI 路由判断。
+   */
+  fun isModelFileExists(): Boolean {
+    val file = getModelPath()
+    return file.exists() && file.length() > 0
   }
 
   /**

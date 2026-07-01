@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * UI 桥接层 — 将 NodeRuntime 状态暴露为 Compose 友好的 StateFlow。
@@ -44,6 +45,7 @@ class MainViewModel(
     val runtime = nodeApp.ensureRuntime()
     runtime.setForeground(foreground)
     runtimeRef.value = runtime
+    syncDownloadState()
     return runtime
   }
 
@@ -105,8 +107,24 @@ class MainViewModel(
   val videoConfig: StateFlow<VideoConfig> = runtimeState(VideoConfig.LOW) { it.videoConfig }
 
   // --- 模型下载 ---
-  val downloadState: StateFlow<ModelDownloadState> =
-    runtimeState(ModelDownloadState.Idle) { it.downloadState }
+  /**
+   * downloadState 独立于 runtime 维护，避免 runtime 为 null 时始终返回 Idle。
+   * 初始化时直接读取文件系统状态作为初始值。
+   */
+  private val _downloadState = MutableStateFlow<ModelDownloadState>(
+    if (nodeApp.modelInstaller.isModelFileExists()) ModelDownloadState.Completed
+    else ModelDownloadState.Idle
+  )
+  val downloadState: StateFlow<ModelDownloadState> = _downloadState.asStateFlow()
+
+  /** 同步 runtime 的 downloadState 到 ViewModel 的独立 flow */
+  fun syncDownloadState() {
+    viewModelScope.launch {
+      runtimeRef.value?.downloadState?.collect { state ->
+        _downloadState.value = state
+      }
+    }
+  }
 
   /**
    * 前台/后台切换时启动 runtime
@@ -121,7 +139,7 @@ class MainViewModel(
 
   fun setOnboardingCompleted(value: Boolean) {
     if (value) {
-      ensureRuntime()
+      queueRuntimeStartup()
     }
     prefs.setOnboardingCompleted(value)
   }
@@ -150,20 +168,42 @@ class MainViewModel(
 
   // --- 聊天操作 ---
   fun sendChat(message: String, attachments: List<OutgoingAttachment> = emptyList()) {
-    ensureRuntime().markInteraction()
-    ensureRuntime().sendChat(message, attachments)
+    try {
+      ensureRuntime().markInteraction()
+      ensureRuntime().sendChat(message, attachments)
+    } catch (e: Exception) {
+      Log.e("MainViewModel", "sendChat failed", e)
+    }
   }
 
   fun sendImage(uri: Uri, caption: String = "") {
-    ensureRuntime().sendImage(uri.toString(), caption)
+    try {
+      ensureRuntime().sendImage(uri.toString(), caption)
+    } catch (e: Exception) {
+      Log.e("MainViewModel", "sendImage failed", e)
+    }
   }
 
   fun sendVideo(uri: Uri, caption: String = "") {
-    ensureRuntime().sendVideo(uri.toString(), caption)
+    try {
+      ensureRuntime().sendVideo(uri.toString(), caption)
+    } catch (e: Exception) {
+      Log.e("MainViewModel", "sendVideo failed", e)
+    }
   }
 
   fun sendVoice(uri: Uri, transcript: String = "") {
-    ensureRuntime().sendVoice(uri.toString(), transcript)
+    try {
+      // 验证文件有效性
+      val file = File(uri.path ?: return)
+      if (!file.exists() || file.length() == 0L) {
+        Log.w("MainViewModel", "sendVoice: invalid file, skipping")
+        return
+      }
+      ensureRuntime().sendVoice(uri.toString(), transcript)
+    } catch (e: Exception) {
+      Log.e("MainViewModel", "sendVoice failed", e)
+    }
   }
 
   fun abortChat() {
