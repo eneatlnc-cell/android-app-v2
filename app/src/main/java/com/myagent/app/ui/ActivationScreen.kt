@@ -53,7 +53,7 @@ fun ActivationScreen(
   var showError by remember { mutableStateOf(false) }
   var isLoading by remember { mutableStateOf(false) }
 
-  val doActivate: (String) -> Unit = { input ->
+  val doActivate: (String) -> Unit = doActivate@{ input ->
     if (input.isBlank()) {
       errorMessage = "请输入激活码"
       showError = true

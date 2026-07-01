@@ -74,7 +74,7 @@ class LiteRtEngine(private val context: Context) {
         // 骁龙 8 + ≥12GB → QNN NPU
         Log.i(TAG, "SD8 detected (${caps.platform}), ${caps.totalRamGb}GB RAM → NPU mode")
         val nativeLibDir = context.applicationInfo.nativeLibraryDir
-        Backend.NPU(nativeLibraryDir)
+        Backend.NPU(nativeLibDir)
       } else {
         // 其他平台 → CPU 多线程
         val reason = if (!caps.isSd8) "non-SD8 platform (${caps.platform})"
