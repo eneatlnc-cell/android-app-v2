@@ -103,12 +103,18 @@ fun ChatInputBar(
   // --- 图片选择器 ---
   val imagePicker = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.GetContent()
-  ) { uri: Uri? -> uri?.let { onSendImage(it) } }
+  ) { uri: Uri? ->
+    if (uri != null) onSendImage(uri)
+    else android.widget.Toast.makeText(context, "已取消选择", android.widget.Toast.LENGTH_SHORT).show()
+  }
 
   // --- 视频选择器 ---
   val videoPicker = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.GetContent()
-  ) { uri: Uri? -> uri?.let { onSendVideo(it) } }
+  ) { uri: Uri? ->
+    if (uri != null) onSendVideo(uri)
+    else android.widget.Toast.makeText(context, "已取消选择", android.widget.Toast.LENGTH_SHORT).show()
+  }
 
   // ── 加号浮层 ──
   if (showSheet) {
