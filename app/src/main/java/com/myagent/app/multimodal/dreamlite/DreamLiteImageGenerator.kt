@@ -51,6 +51,8 @@ class DreamLiteImageGenerator(
     val html = generateHtmlForImage(prompt, style, DEFAULT_WIDTH, DEFAULT_HEIGHT)
     val wv = getOrCreateWebView(DEFAULT_WIDTH, DEFAULT_HEIGHT)
     loadHtmlAndWait(wv, html)
+    // WebView 渲染是异步的，onPageFinished 后仍需等布局完成
+    delay(500)
     val bitmap = captureFrame(wv, DEFAULT_WIDTH, DEFAULT_HEIGHT)
       ?: createFallbackBitmap(prompt)
     webView = null // 释放引用，下次重新创建
@@ -68,6 +70,7 @@ class DreamLiteImageGenerator(
     val html = generateEditHtml(prompt, DEFAULT_WIDTH, DEFAULT_HEIGHT)
     val wv = getOrCreateWebView(DEFAULT_WIDTH, DEFAULT_HEIGHT)
     loadHtmlAndWait(wv, html)
+    delay(500) // 等待 WebView 渲染完成
     val result = captureFrame(wv, DEFAULT_WIDTH, DEFAULT_HEIGHT)
       ?: sourceImage
     webView = null
@@ -123,12 +126,19 @@ class DreamLiteImageGenerator(
   }
 
   private fun captureFrame(wv: WebView, targetWidth: Int, targetHeight: Int): Bitmap? {
-    if (wv.width == 0 || wv.height == 0) return null
+    // 确保 WebView 已完成布局（渲染异步完成后再量一次）
+    if (wv.width == 0 || wv.height == 0) {
+      wv.layout(0, 0, targetWidth, targetHeight)
+      wv.measure(
+        android.view.View.MeasureSpec.makeMeasureSpec(targetWidth, android.view.View.MeasureSpec.EXACTLY),
+        android.view.View.MeasureSpec.makeMeasureSpec(targetHeight, android.view.View.MeasureSpec.EXACTLY)
+      )
+    }
     val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     canvas.scale(
-      targetWidth.toFloat() / wv.width.toFloat(),
-      targetHeight.toFloat() / wv.height.toFloat()
+      targetWidth.toFloat() / wv.width.coerceAtLeast(1).toFloat(),
+      targetHeight.toFloat() / wv.height.coerceAtLeast(1).toFloat()
     )
     wv.draw(canvas)
     return bitmap

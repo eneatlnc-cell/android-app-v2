@@ -46,7 +46,8 @@ fun RootScreen(viewModel: MainViewModel) {
   val startDestination = when {
     !welcomeDone -> Routes.WELCOME
     !isActivated -> Routes.ACTIVATION
-    !onboardingCompleted || !modelReady -> Routes.ONBOARDING
+    !onboardingCompleted -> Routes.ONBOARDING // 人格选择优先于模型下载判断
+    !modelReady -> Routes.ONBOARDING
     else -> Routes.SHELL
   }
 

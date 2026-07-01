@@ -1,7 +1,9 @@
 package com.myagent.app.ui.chat
 
+import android.Manifest
 import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Row
@@ -58,6 +60,14 @@ fun ChatInputBar(
   var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
   var audioFile by remember { mutableStateOf<File?>(null) }
 
+  // --- 麦克风权限 ---
+  var hasMicPermission by remember { mutableStateOf(false) }
+  val micPermissionLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.RequestPermission()
+  ) { granted ->
+    hasMicPermission = granted
+  }
+
   // --- 图片选择器 ---
   val imagePicker = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.GetContent()
@@ -71,10 +81,14 @@ fun ChatInputBar(
       .padding(horizontal = 8.dp, vertical = 6.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    // 语音入口 — 长按录音，松开发送；加载中禁用
+    // 语音入口 — 点击录音/停止，加载中禁用
     IconButton(
       onClick = {
         if (isLoading) return@IconButton
+        if (!hasMicPermission) {
+          micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+          return@IconButton
+        }
         if (isRecording) {
           stopRecording(recorder, audioFile) { file -> onSendVoice(Uri.fromFile(file)) }
           recorder = null
@@ -162,7 +176,12 @@ private fun startRecording(
 ) {
   try {
     val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
-    val mr = MediaRecorder(context).apply {
+    val mr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      MediaRecorder(context)
+    } else {
+      @Suppress("DEPRECATION")
+      MediaRecorder()
+    }.apply {
       setAudioSource(MediaRecorder.AudioSource.MIC)
       setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
       setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -173,8 +192,8 @@ private fun startRecording(
       start()
     }
     onReady(mr, file)
-  } catch (_: Exception) {
-    // 录音启动失败，静默忽略
+  } catch (e: Exception) {
+    android.util.Log.e("ChatInputBar", "Recording failed: ${e.message}", e)
   }
 }
 
