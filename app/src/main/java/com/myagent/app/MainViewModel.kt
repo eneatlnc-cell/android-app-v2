@@ -156,6 +156,7 @@ class MainViewModel(
 
   // --- 聊天操作 ---
   fun sendChat(message: String, attachments: List<OutgoingAttachment> = emptyList()) {
+    ensureRuntime().markInteraction()
     ensureRuntime().sendChat(message, attachments)
   }
 
@@ -192,6 +193,30 @@ class MainViewModel(
 
   fun setSkinMode(mode: SkinMode) {
     prefs.setSkinMode(mode)
+  }
+
+  // --- 主动搭话 ---
+
+  /**
+   * 检查是否需要主动搭话，返回搭话内容（null 表示不需要）
+   */
+  fun checkProactive(isAppLaunch: Boolean = false): String? {
+    return runtimeRef.value?.checkProactive(isAppLaunch)
+  }
+
+  /** 插入系统消息（主动搭话用） */
+  fun insertSystemMessage(text: String) {
+    ensureRuntime().insertSystemMessage(text)
+  }
+
+  // --- 数据管理 ---
+
+  fun clearChatHistory() {
+    ensureRuntime().clearChatHistory()
+  }
+
+  fun clearAllMemories() {
+    ensureRuntime().clearAllMemories()
   }
 
   // --- 多模态操作 ---

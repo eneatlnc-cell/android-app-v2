@@ -341,6 +341,17 @@ class ChatController(
     _errorText.value = null
   }
 
+  /** 插入系统消息（主动搭话用），不触发模型推理 */
+  fun addSystemMessage(text: String) {
+    val msg = ChatMessage(
+      id = UUID.randomUUID().toString(),
+      role = "assistant",
+      content = text,
+      timestamp = System.currentTimeMillis(),
+    )
+    _messages.value = _messages.value + msg
+  }
+
   private fun isLoopOutput(text: String): Boolean {
     if (text.length < 3) return false
     val tokens = text.split(Regex("\\s+")).filter { it.isNotBlank() }

@@ -18,7 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
@@ -64,6 +66,8 @@ fun SettingsScreen(
   var showAppearanceDialog by remember { mutableStateOf(false) }
   var showSkinDialog by remember { mutableStateOf(false) }
   var showVideoDialog by remember { mutableStateOf(false) }
+  var showDataDialog by remember { mutableStateOf(false) }
+  var showAboutDialog by remember { mutableStateOf(false) }
 
   Column(
     modifier = modifier
@@ -81,6 +85,26 @@ fun SettingsScreen(
       personaSelected = personaSelected,
       currentPersona = currentPersona,
       onRequestPersonaSelection = onRequestPersonaSelection,
+    )
+
+    HorizontalDivider()
+
+    // ── 数据管理 ──
+    SettingsRow(
+      icon = Icons.Default.Delete,
+      title = "数据管理",
+      subtitle = "聊天记录、记忆数据",
+      onClick = { showDataDialog = true },
+    )
+
+    HorizontalDivider()
+
+    // ── 关于 ──
+    SettingsRow(
+      icon = Icons.Default.Info,
+      title = "关于 Memento",
+      subtitle = "版本 2.0.0",
+      onClick = { showAboutDialog = true },
     )
 
     HorizontalDivider()
@@ -165,6 +189,26 @@ fun SettingsScreen(
         showVideoDialog = false
       },
       onDismiss = { showVideoDialog = false },
+    )
+  }
+
+  if (showAboutDialog) {
+    AboutDialog(
+      onDismiss = { showAboutDialog = false },
+    )
+  }
+
+  if (showDataDialog) {
+    DataDialog(
+      onClearChat = {
+        viewModel.clearChatHistory()
+        showDataDialog = false
+      },
+      onClearAll = {
+        viewModel.clearAllMemories()
+        showDataDialog = false
+      },
+      onDismiss = { showDataDialog = false },
     )
   }
 }
@@ -296,6 +340,159 @@ private fun VideoConfigDialog(
       TextButton(onClick = onDismiss) { Text("取消") }
     },
   )
+}
+
+// ── 关于弹窗 ──
+
+@Composable
+private fun AboutDialog(
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("关于 Memento") },
+    text = {
+      Column {
+        Text(
+          text = "Memento v2.0.0",
+          style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+          text = "你的 AI 搭子，永远在线。",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+          text = "基于 Google AI Edge LiteRT-LM 引擎，端侧推理，数据不出设备。",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+          text = "隐私政策",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.clickable { /* TODO: 打开隐私政策链接 */ },
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+          text = "用户协议",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.clickable { /* TODO: 打开用户协议链接 */ },
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+          text = "开源许可",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.clickable { /* TODO: 打开开源许可页面 */ },
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+          text = "© 2024 Memento Team",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = onDismiss) { Text("关闭") }
+    },
+  )
+}
+
+// ── 数据管理弹窗 ──
+
+@Composable
+private fun DataDialog(
+  onClearChat: () -> Unit,
+  onClearAll: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  var showConfirmClearChat by remember { mutableStateOf(false) }
+  var showConfirmClearAll by remember { mutableStateOf(false) }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("数据管理") },
+    text = {
+      Column {
+        Text(
+          text = "聊天记录存储在本地设备上，清除后不可恢复。",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+          onClick = { showConfirmClearChat = true },
+          modifier = Modifier.fillMaxWidth(),
+          colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+          ),
+        ) {
+          Text("清除聊天记录")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+          onClick = { showConfirmClearAll = true },
+          modifier = Modifier.fillMaxWidth(),
+          colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFFFFECEC),
+            contentColor = Color(0xFFE87070),
+          ),
+        ) {
+          Text("清除所有数据（聊天 + 记忆）")
+        }
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = onDismiss) { Text("关闭") }
+    },
+  )
+
+  // 二次确认：清除聊天记录
+  if (showConfirmClearChat) {
+    AlertDialog(
+      onDismissRequest = { showConfirmClearChat = false },
+      title = { Text("确认清除") },
+      text = { Text("确定要清除所有聊天记录吗？此操作不可撤销。") },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            showConfirmClearChat = false
+            onClearChat()
+          },
+        ) { Text("确定", color = Color(0xFFE87070)) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showConfirmClearChat = false }) { Text("取消") }
+      },
+    )
+  }
+
+  // 二次确认：清除所有数据
+  if (showConfirmClearAll) {
+    AlertDialog(
+      onDismissRequest = { showConfirmClearAll = false },
+      title = { Text("确认清除全部") },
+      text = { Text("确定要清除聊天记录和所有记忆数据吗？此操作不可撤销。") },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            showConfirmClearAll = false
+            onClearAll()
+          },
+        ) { Text("确定清除", color = Color(0xFFE87070)) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showConfirmClearAll = false }) { Text("取消") }
+      },
+    )
+  }
 }
 
 // ── 外观弹窗 ──

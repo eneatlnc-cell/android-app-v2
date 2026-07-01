@@ -10,6 +10,7 @@ import com.myagent.app.model.PersonaManager
 import com.myagent.app.model.PersonaType
 import com.myagent.app.multimodal.MultiModalDispatcher
 import com.myagent.app.multimodal.VideoConfig
+import com.myagent.app.proactive.ProactiveTrigger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,6 +54,10 @@ class NodeRuntime(
 
   // 聊天控制器
   val chatController = ChatController(scope, modelLoader, memoryManager, personaManager, app.cacheDir, app.contentResolver)
+
+  // 主动搭话引擎
+  private val proactiveTrigger = ProactiveTrigger()
+  private var lastInteractionMs: Long = 0L
 
   // --- 模型下载状态 ---
 
@@ -192,5 +197,39 @@ class NodeRuntime(
    */
   suspend fun generateImage(prompt: String, style: String? = null): android.graphics.Bitmap {
     return MultiModalDispatcher.generateImage(prompt, style)
+  }
+
+  // --- 主动搭话 ---
+
+  /** 标记用户交互时间，每次发送消息时调用 */
+  fun markInteraction() {
+    lastInteractionMs = System.currentTimeMillis()
+  }
+
+  /** 检查是否需要主动搭话（App 启动时调用） */
+  fun checkProactive(isAppLaunch: Boolean = false): String? {
+    val persona = personaManager.getPersona()
+    if (!proactiveTrigger.shouldTrigger(lastInteractionMs, isAppLaunch)) return null
+    val message = proactiveTrigger.getProactiveMessage(persona)
+    // 搭话前更新交互时间，避免短时间内重复触发
+    lastInteractionMs = System.currentTimeMillis()
+    return message
+  }
+
+  // --- 数据管理 ---
+
+  /** 清除聊天记录 */
+  fun clearChatHistory() {
+    chatController.clearMessages()
+  }
+
+  /** 清除所有记忆 */
+  fun clearAllMemories() {
+    memoryManager.clearAllMemories()
+  }
+
+  /** 插入系统消息（主动搭话用） */
+  fun insertSystemMessage(text: String) {
+    chatController.addSystemMessage(text)
   }
 }

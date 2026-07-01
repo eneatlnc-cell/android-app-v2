@@ -84,6 +84,15 @@ fun ChatScreen(
     }
   }
 
+  // 主动搭话 — 首次进入聊天页时检查
+  LaunchedEffect(Unit) {
+    val proactiveMsg = viewModel.checkProactive(isAppLaunch = true)
+    if (proactiveMsg != null) {
+      // 搭话作为系统消息插入，不触发模型推理
+      viewModel.insertSystemMessage(proactiveMsg)
+    }
+  }
+
   Column(
     modifier = modifier
       .background(skinColors.canvas)
