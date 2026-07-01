@@ -13,6 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -116,9 +118,11 @@ class MainViewModel(
   )
   val downloadState: StateFlow<ModelDownloadState> = _downloadState.asStateFlow()
 
-  /** 同步 runtime 的 downloadState 到 ViewModel 的独立 flow */
+  /** 同步 runtime 的 downloadState 到 ViewModel 的独立 flow（取消旧收集器防止泄漏） */
+  private var syncDownloadJob: Job? = null
   fun syncDownloadState() {
-    viewModelScope.launch {
+    syncDownloadJob?.cancel()
+    syncDownloadJob = viewModelScope.launch {
       runtimeRef.value?.downloadState?.collect { state ->
         _downloadState.value = state
       }
@@ -157,7 +161,7 @@ class MainViewModel(
 
   fun resetModelDownload() {
     downloadJob?.cancel()
-    _downloadRetryCount.value = _downloadRetryCount.value + 1
+    _downloadRetryCount.update { it + 1 }
     downloadJob = viewModelScope.launch(Dispatchers.Default) {
       ensureRuntime().resetAndStartDownload()
     }

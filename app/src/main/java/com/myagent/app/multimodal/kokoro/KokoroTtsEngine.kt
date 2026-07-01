@@ -69,7 +69,7 @@ class KokoroTtsEngine(
         return true
       } catch (e: Exception) {
         Log.e(TAG, "Init failed: ${e.message}", e)
-        ready = true
+        ready = false
         return false
       }
     }
@@ -95,6 +95,11 @@ class KokoroTtsEngine(
       return@withContext mockSynthesize(text)
     }
 
+    var inputTensor: OnnxTensor? = null
+    var styleTensor: OnnxTensor? = null
+    var speedTensor: OnnxTensor? = null
+    var results: OrtSession.Result? = null
+
     try {
       val phonemeIds = textToPhonemes(text)
       val voiceEmbedding = voiceEmbeddings[voice]
@@ -104,12 +109,12 @@ class KokoroTtsEngine(
       val env = ortEnv!!
 
       val inputShape = longArrayOf(1, phonemeIds.size.toLong())
-      val inputTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(phonemeIds), inputShape)
+      inputTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(phonemeIds), inputShape)
 
       val styleShape = longArrayOf(1, VOICE_EMBEDDING_DIM.toLong())
-      val styleTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(voiceEmbedding), styleShape)
+      styleTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(voiceEmbedding), styleShape)
 
-      val speedTensor = OnnxTensor.createTensor(
+      speedTensor = OnnxTensor.createTensor(
         env, FloatBuffer.wrap(floatArrayOf(speed.coerceIn(0.5f, 2.0f))), longArrayOf(1)
       )
 
@@ -119,22 +124,21 @@ class KokoroTtsEngine(
         "speed" to speedTensor,
       )
 
-      val results = session.run(inputs)
+      results = session.run(inputs)
       @Suppress("UNCHECKED_CAST")
       val output = (results[0].value as Array<FloatArray>)[0]
 
       val pcm = output.copyOf()
-      val bytes = pcmToWavBytes(pcm, SAMPLE_RATE)
-
-      inputTensor.close()
-      styleTensor.close()
-      speedTensor.close()
-      results.close()
-
-      bytes
+      pcmToWavBytes(pcm, SAMPLE_RATE)
     } catch (e: Exception) {
       Log.e(TAG, "Synthesize failed: ${e.message}", e)
       mockSynthesize(text)
+    } finally {
+      // 确保 ONNX 张量在任何情况下都被释放，防止 Native 内存泄漏
+      inputTensor?.close()
+      styleTensor?.close()
+      speedTensor?.close()
+      results?.close()
     }
   }
 

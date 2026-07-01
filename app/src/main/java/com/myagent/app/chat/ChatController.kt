@@ -300,8 +300,8 @@ class ChatController(
         val (cleanContent, genAction) = parseMultimodalTag(rawContent)
 
         // 更新文字消息（去掉标记）
-        _messages.value = _messages.value.map {
-          if (it.id == assistantId) it.copy(content = cleanContent) else it
+        _messages.update { list ->
+          list.map { if (it.id == assistantId) it.copy(content = cleanContent) else it }
         }
 
         // 保存助手回复到记忆

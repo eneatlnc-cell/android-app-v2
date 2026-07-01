@@ -156,6 +156,11 @@ private fun SplashScreen(
   onReady: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  // runtime 初始化完成后自动跳转
+  LaunchedEffect(Unit) {
+    onReady()
+  }
+
   val infiniteTransition = rememberInfiniteTransition(label = "splash")
   val alpha by infiniteTransition.animateFloat(
     initialValue = 0.4f,

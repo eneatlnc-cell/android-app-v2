@@ -286,6 +286,7 @@ private suspend fun playTts(
   text: String,
 ) {
   val tmp = File(context.cacheDir, "tts_${messageId}.wav")
+  var mp: MediaPlayer? = null
   try {
     val wav = withContext(Dispatchers.Default) {
       viewModel.synthesizeSpeech(text)
@@ -295,32 +296,41 @@ private suspend fun playTts(
       return
     }
     FileOutputStream(tmp).use { it.write(wav) }
-    withContext(Dispatchers.Main) {
-      val mp = MediaPlayer()
+    // 使用 suspendCancellableCoroutine 确保协程取消时释放 MediaPlayer
+    kotlinx.coroutines.suspendCancellableCoroutine<Unit> { cont ->
+      val player = MediaPlayer().also { mp = it }
       try {
-        mp.setDataSource(tmp.absolutePath)
-        mp.setOnPreparedListener { it.start() }
-        mp.setOnCompletionListener {
+        player.setDataSource(tmp.absolutePath)
+        player.setOnPreparedListener { it.start() }
+        player.setOnCompletionListener {
           it.release()
-          tmp.delete() // 播放完成后清理临时文件
+          tmp.delete()
+          cont.resume(Unit) {}
         }
-        mp.setOnErrorListener { _, _, _ ->
-          mp.release()
+        player.setOnErrorListener { _, _, _ ->
+          player.release()
           tmp.delete()
           android.widget.Toast.makeText(context, "无法播放语音", android.widget.Toast.LENGTH_SHORT).show()
+          cont.resume(Unit) {}
           true
         }
-        mp.prepareAsync()
+        player.prepareAsync()
       } catch (e: Exception) {
-        mp.release()
+        player.release()
         tmp.delete()
         android.widget.Toast.makeText(context, "无法播放语音", android.widget.Toast.LENGTH_SHORT).show()
+        cont.resume(Unit) {}
+      }
+      cont.invokeOnCancellation {
+        try { player.release() } catch (_: Exception) {}
+        tmp.delete()
       }
     }
   } catch (e: Exception) {
     tmp.delete()
-    withContext(Dispatchers.Main) {
-      android.widget.Toast.makeText(context, "无法播放语音", android.widget.Toast.LENGTH_SHORT).show()
-    }
+    android.widget.Toast.makeText(context, "无法播放语音", android.widget.Toast.LENGTH_SHORT).show()
+  } finally {
+    // 协程取消时确保 MediaPlayer 被释放
+    try { mp?.release() } catch (_: Exception) {}
   }
 }

@@ -76,7 +76,7 @@ class HyperFramesRenderer(
       return@withContext outputFile
     }
 
-    // 3. 逐帧渲染
+    // 3. 逐帧渲染（WebView 操作在主线程，编码在后台线程避免 ANR）
     val totalFrames = duration * fps
     val encoder = BitmapToVideoEncoder(outputFile, width, height, fps)
 
@@ -88,7 +88,10 @@ class HyperFramesRenderer(
         delay(16)
         val bitmap = captureFrame(wv, width, height)
         if (bitmap != null) {
-          encoder.encodeFrame(bitmap)
+          // 编码（YUV 转换 + MediaCodec 输入）放到 Default 线程，避免阻塞主线程
+          withContext(Dispatchers.Default) {
+            encoder.encodeFrame(bitmap)
+          }
           bitmap.recycle()
         }
         onProgress?.invoke(frameIndex.toFloat() / totalFrames)

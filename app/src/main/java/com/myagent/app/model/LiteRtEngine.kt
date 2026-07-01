@@ -37,8 +37,8 @@ class LiteRtEngine(private val context: Context) {
     private const val TAG = "LiteRtEngine"
   }
 
-  private var engine: Engine? = null
-  private var conversation: Conversation? = null
+  @Volatile private var engine: Engine? = null
+  @Volatile private var conversation: Conversation? = null
 
   /** 当前使用的后端（用于日志/诊断） */
   var activeBackend: String = "unknown"
@@ -55,13 +55,16 @@ class LiteRtEngine(private val context: Context) {
    * @param maxTokens  每次推理最大 token 数（由 ConversationConfig 控制，此处保留参数兼容）
    * @return true 表示初始化成功
    */
-  fun init(modelPath: String, maxTokens: Int = 512): Boolean {
+  fun init(modelPath: String, maxTokens: Int = 512): Boolean = synchronized(this) {
     try {
-      // 防止重复初始化导致原生资源泄漏
-      if (engine != null) {
+      // 防止重复初始化导致原生资源泄漏（synchronized 保证原子性）
+      engine?.let {
         Log.w(TAG, "Engine already initialized, closing old instance first")
-        close()
+        it.close()
+        engine = null
       }
+      conversation?.close()
+      conversation = null
 
       val caps = DeviceCapability.detect(context)
       val kvCacheTokens = when {
@@ -111,25 +114,26 @@ class LiteRtEngine(private val context: Context) {
 
   /**
    * 流式生成回复（纯文本）。
+   * 在 synchronized 块中快照 conversation 引用，避免与 close() 竞态。
    */
-  fun generate(prompt: String): Flow<String> = callbackFlow {
-    val conv = conversation ?: run {
+  fun generate(prompt: String): Flow<String> {
+    val conv = synchronized(this) { conversation }
+    if (conv == null) {
       Log.e(TAG, "Conversation not initialized — cannot generate")
-      close()
-      return@callbackFlow
+      return callbackFlow { close() }
     }
-
-    try {
-      conv.sendMessageAsync(prompt).collect { message ->
-        trySend(message.toString())
+    return callbackFlow {
+      try {
+        conv.sendMessageAsync(prompt).collect { message ->
+          trySend(message.toString())
+        }
+        close()
+      } catch (e: Exception) {
+        Log.e(TAG, "Generate error: ${e.message}", e)
+        close(e)
       }
-      close()
-    } catch (e: Exception) {
-      Log.e(TAG, "Generate error: ${e.message}", e)
-      close(e)
+      awaitClose {}
     }
-
-    awaitClose {}
   }
 
   /**
@@ -138,46 +142,48 @@ class LiteRtEngine(private val context: Context) {
    * 构建 Content 列表，包含 TextPart 和 ImageFile，通过 Message 传给 Conversation。
    * Gemma 4 原生视觉编码器会解析图片像素，结合文本 Prompt 一起推理。
    */
-  fun generateWithImages(text: String, imagePaths: List<String>): Flow<String> = callbackFlow {
-    val conv = conversation ?: run {
+  fun generateWithImages(text: String, imagePaths: List<String>): Flow<String> {
+    val conv = synchronized(this) { conversation }
+    if (conv == null) {
       Log.e(TAG, "Conversation not initialized — cannot generate")
-      close()
-      return@callbackFlow
+      return callbackFlow { close() }
     }
-
-    try {
-      val contents = mutableListOf<Content>()
-      if (text.isNotEmpty()) {
-        contents.add(Content.Text(text))
-      }
-      for (path in imagePaths) {
-        if (path.isNotBlank()) {
-          contents.add(Content.ImageFile(path))
-          Log.i(TAG, "Attached image: $path")
+    return callbackFlow {
+      try {
+        val contents = mutableListOf<Content>()
+        if (text.isNotEmpty()) {
+          contents.add(Content.Text(text))
         }
+        for (path in imagePaths) {
+          if (path.isNotBlank()) {
+            contents.add(Content.ImageFile(path))
+            Log.i(TAG, "Attached image: $path")
+          }
+        }
+        val message = Message.user(Contents.of(contents))
+        conv.sendMessageAsync(message).collect { chunk ->
+          trySend(chunk.toString())
+        }
+        close()
+      } catch (e: Exception) {
+        Log.e(TAG, "Generate with images error: ${e.message}", e)
+        close(e)
       }
-      val message = Message.user(Contents.of(contents))
-      conv.sendMessageAsync(message).collect { chunk ->
-        trySend(chunk.toString())
-      }
-      close()
-    } catch (e: Exception) {
-      Log.e(TAG, "Generate with images error: ${e.message}", e)
-      close(e)
+      awaitClose {}
     }
-
-    awaitClose {}
   }
 
   /**
-   * 关闭引擎，释放所有资源。
+   * 关闭引擎，释放所有资源（synchronized 防止与 generate/init 并发）。
    */
-  fun close() {
+  fun close() = synchronized(this) {
     try {
       conversation?.close()
-      engine?.close()
     } catch (_: Exception) {}
     conversation = null
+    try {
+      engine?.close()
+    } catch (_: Exception) {}
     engine = null
     Log.i(TAG, "Engine closed")
   }
