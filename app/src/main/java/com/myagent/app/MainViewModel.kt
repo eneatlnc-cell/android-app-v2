@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.File
 
 /**
  * UI 桥接层 — 将 NodeRuntime 状态暴露为 Compose 友好的 StateFlow。
@@ -189,20 +188,6 @@ class MainViewModel(
       ensureRuntime().sendVideo(uri.toString(), caption)
     } catch (e: Exception) {
       Log.e("MainViewModel", "sendVideo failed", e)
-    }
-  }
-
-  fun sendVoice(uri: Uri, transcript: String = "") {
-    try {
-      // 验证文件有效性
-      val file = File(uri.path ?: return)
-      if (!file.exists() || file.length() == 0L) {
-        Log.w("MainViewModel", "sendVoice: invalid file, skipping")
-        return
-      }
-      ensureRuntime().sendVoice(uri.toString(), transcript)
-    } catch (e: Exception) {
-      Log.e("MainViewModel", "sendVoice failed", e)
     }
   }
 

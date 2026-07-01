@@ -393,20 +393,6 @@ class ChatController(
     }
   }
 
-  fun sendVoice(audioUri: String, transcript: String = "") {
-    val message = ChatMessage(
-      id = UUID.randomUUID().toString(),
-      role = "user",
-      content = transcript.ifEmpty { "语音消息" },
-      type = "voice",
-      attachmentUri = audioUri,
-    )
-    _messages.update { it + message }
-    if (transcript.isNotEmpty()) {
-      sendMessage(transcript)
-    }
-  }
-
   /**
    * 视频输入 — 帧采样后作为多张图片传给 E4B。
    *

@@ -155,10 +155,6 @@ class NodeRuntime(
     chatController.sendVideo(videoUri, caption)
   }
 
-  fun sendVoice(audioUri: String, transcript: String = "") {
-    chatController.sendVoice(audioUri, transcript)
-  }
-
   fun abortChat() {
     chatController.abort()
   }

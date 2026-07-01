@@ -66,10 +66,21 @@ class LocalModelLoader(
   }
 
   /**
-   * 流式生成回复。模型未就绪时返回空流。
+   * 尝试自动恢复：如果模型文件存在但引擎未初始化，尝试重新初始化。
+   */
+  private fun tryAutoRecover(): Boolean {
+    if (initialized) return true
+    if (modelPath == null) return false
+    Log.i(TAG, "Auto-recovering: re-initializing engine from $modelPath")
+    doInitialize(modelPath!!)
+    return initialized
+  }
+
+  /**
+   * 流式生成回复。模型未就绪时尝试自动恢复，仍失败则返回提示。
    */
   fun generate(prompt: String): Flow<String> {
-    if (!initialized || modelPath == null) {
+    if (!tryAutoRecover()) {
       Log.w(TAG, "Model not ready, cannot generate")
       return callbackFlow {
         trySend("模型尚未下载完成，请等待下载结束后再试。")
@@ -116,7 +127,7 @@ class LocalModelLoader(
    * 图片路径传给 LiteRT-LM Conversation，Gemma 4 原生视觉编码器解析。
    */
   fun generateWithImages(prompt: String, imagePaths: List<String>): Flow<String> {
-    if (!initialized || modelPath == null) {
+    if (!tryAutoRecover()) {
       Log.w(TAG, "Model not ready, cannot generate")
       return callbackFlow {
         trySend("模型尚未下载完成，请等待下载结束后再试。")

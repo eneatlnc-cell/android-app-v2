@@ -134,7 +134,6 @@ private fun MessageContent(
 
   when (message.type) {
     "image" -> ImageBubble(message = message, isUser = isUser, contentColor = contentColor)
-    "voice" -> VoiceBubble(message = message, contentColor = contentColor)
     "video" -> VideoBubble(message = message, isUser = isUser, contentColor = contentColor)
     else -> TextBubble(message = message, contentColor = contentColor)
   }
@@ -188,27 +187,6 @@ private fun ImageBubble(
   if (message.content.isNotEmpty()) {
     Spacer(modifier = Modifier.height(6.dp))
     Text(text = message.content, color = contentColor, fontSize = 13.sp)
-  }
-}
-
-@Composable
-private fun VoiceBubble(
-  message: ChatMessage,
-  contentColor: androidx.compose.ui.graphics.Color,
-) {
-  Row(verticalAlignment = Alignment.CenterVertically) {
-    Icon(
-      imageVector = Icons.Default.PlayArrow,
-      contentDescription = "播放",
-      tint = contentColor,
-      modifier = Modifier.size(20.dp),
-    )
-    Spacer(modifier = Modifier.width(8.dp))
-    Text(
-      text = if (message.content.isNotEmpty()) message.content else "语音消息",
-      color = contentColor,
-      fontSize = 14.sp,
-    )
   }
 }
 

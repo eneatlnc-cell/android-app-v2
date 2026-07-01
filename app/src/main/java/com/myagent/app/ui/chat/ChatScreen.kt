@@ -184,7 +184,6 @@ fun ChatScreen(
       onSendText = { text -> viewModel.sendChat(text) },
       onSendImage = { uri -> viewModel.sendImage(uri) },
       onSendVideo = { uri -> viewModel.sendVideo(uri) },
-      onSendVoice = { uri -> viewModel.sendVoice(uri) },
       onAbort = { viewModel.abortChat() },
     )
   }
@@ -199,7 +198,7 @@ private fun EmptyChatHint() {
     contentAlignment = Alignment.Center,
   ) {
     Text(
-      text = "开始和 Memento 聊天吧！\n支持文字、图片、语音",
+      text = "开始和 Memento 聊天吧！\n支持文字、图片、视频",
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       fontSize = 16.sp,
     )
@@ -230,23 +229,20 @@ private fun StreamingTextBubble(text: String) {
 }
 
 /**
- * Memento 正在思考的动画指示器 — 三个跳动的点。
+ * Memento 正在思考的动画指示器 — 一个跳动点 + 文字。
  */
 @Composable
 private fun TypingIndicator() {
   val infiniteTransition = rememberInfiniteTransition(label = "typing")
-  val dotCount = 3
-  val dotAlpha = List(dotCount) { index ->
-    infiniteTransition.animateFloat(
-      initialValue = 0.3f,
-      targetValue = 1.0f,
-      animationSpec = infiniteRepeatable(
-        animation = tween(400, delayMillis = index * 150),
-        repeatMode = RepeatMode.Reverse,
-      ),
-      label = "dotAlpha$index",
-    )
-  }
+  val dotAlpha = infiniteTransition.animateFloat(
+    initialValue = 0.3f,
+    targetValue = 1.0f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(600),
+      repeatMode = RepeatMode.Reverse,
+    ),
+    label = "dotAlpha",
+  )
 
   Box(
     modifier = Modifier
@@ -270,20 +266,15 @@ private fun TypingIndicator() {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
       Spacer(modifier = Modifier.size(4.dp))
-      repeat(dotCount) { index ->
-        Box(
-          modifier = Modifier
-            .size(6.dp)
-            .alpha(dotAlpha[index].value)
-            .background(
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              shape = CircleShape,
-            ),
-        )
-        if (index < dotCount - 1) {
-          Spacer(modifier = Modifier.size(4.dp))
-        }
-      }
+      Box(
+        modifier = Modifier
+          .size(6.dp)
+          .alpha(dotAlpha.value)
+          .background(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            shape = CircleShape,
+          ),
+      )
     }
   }
 }

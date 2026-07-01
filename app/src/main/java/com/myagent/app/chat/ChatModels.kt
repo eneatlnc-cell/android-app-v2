@@ -4,7 +4,7 @@ package com.myagent.app.chat
  * 聊天消息数据模型。
  *
  * 支持多模态内容：
- * - type: "text" | "image" | "voice" | "mixed"
+ * - type: "text" | "image" | "video" | "mixed"
  * - attachmentUri: 附件本地路径（图片/语音文件）
  * - attachmentMimeType: 附件 MIME 类型
  */
