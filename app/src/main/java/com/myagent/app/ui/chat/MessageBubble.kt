@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.myagent.app.ui.LocalSkinColors
 
 /**
  * 多模态消息气泡 — 支持文字、图片、语音、视频。
@@ -43,6 +44,8 @@ fun MessageBubble(
   onPlayTts: (String) -> Unit = {},
 ) {
   val isUser = message.role == "user"
+  val skinColors = LocalSkinColors.current
+  val bubbleRadius = skinColors.bubbleRadius
 
   Box(
     modifier = Modifier.fillMaxWidth(),
@@ -53,15 +56,15 @@ fun MessageBubble(
         .widthIn(max = 300.dp)
         .clip(
           RoundedCornerShape(
-            topStart = 12.dp,
-            topEnd = 12.dp,
-            bottomStart = if (isUser) 12.dp else 4.dp,
-            bottomEnd = if (isUser) 4.dp else 12.dp,
+            topStart = bubbleRadius.topStart,
+            topEnd = bubbleRadius.topEnd,
+            bottomStart = if (isUser) bubbleRadius.bottomStart else bubbleRadius.bottomEnd,
+            bottomEnd = if (isUser) bubbleRadius.bottomEnd else bubbleRadius.bottomStart,
           ),
         )
         .background(
-          if (isUser) MaterialTheme.colorScheme.primary
-          else MaterialTheme.colorScheme.surfaceVariant,
+          if (isUser) skinColors.userBubble
+          else skinColors.assistantBubble,
         )
         .padding(12.dp),
     ) {

@@ -83,6 +83,7 @@ class MainViewModel(
 
   // --- 外观 ---
   val appearanceThemeMode: StateFlow<AppearanceThemeMode> = prefs.appearanceThemeMode
+  val skinMode: StateFlow<SkinMode> = prefs.skinMode
 
   // --- 偏好 ---
   val onboardingCompleted: StateFlow<Boolean> = prefs.onboardingCompleted
@@ -187,6 +188,10 @@ class MainViewModel(
   // --- 外观 ---
   fun setAppearanceThemeMode(mode: AppearanceThemeMode) {
     ensureRuntime().setAppearanceThemeMode(mode)
+  }
+
+  fun setSkinMode(mode: SkinMode) {
+    prefs.setSkinMode(mode)
   }
 
   // --- 多模态操作 ---

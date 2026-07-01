@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.myagent.app.SkinColors
 
 /**
  * App color tokens consumed by ClawTheme and bridged into Material components.
@@ -263,3 +264,26 @@ internal fun clawMaterialColorScheme(
     onError = colors.primaryText,
   )
 }
+
+/**
+ * 将 SkinColors 转换为 ClawColors（皮肤系统桥接器）。
+ */
+internal fun skinColorsToClawColors(skin: SkinColors): ClawColors = ClawColors(
+  canvas = skin.canvas,
+  surface = skin.surface,
+  surfaceRaised = skin.surfaceRaised,
+  surfacePressed = skin.surfacePressed,
+  border = skin.border,
+  borderStrong = skin.borderStrong,
+  text = skin.text,
+  textMuted = skin.textMuted,
+  textSubtle = skin.textSubtle,
+  primary = skin.primary,
+  primaryText = skin.primaryText,
+  success = skin.success,
+  successSoft = skin.successSoft,
+  warning = skin.warning,
+  warningSoft = skin.warningSoft,
+  danger = skin.danger,
+  dangerSoft = skin.dangerSoft,
+)

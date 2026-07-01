@@ -1,6 +1,8 @@
 package com.myagent.app.ui
 
 import com.myagent.app.AppearanceThemeMode
+import com.myagent.app.SkinColors
+import com.myagent.app.SkinMode
 import com.myagent.app.ui.design.ClawColors
 import com.myagent.app.ui.design.ClawDarkColors
 import com.myagent.app.ui.design.ClawLightColors
@@ -13,6 +15,7 @@ import com.myagent.app.ui.design.LocalClawTypography
 import com.myagent.app.ui.design.clawMaterialColorScheme
 import com.myagent.app.ui.design.clawTypography
 import com.myagent.app.ui.design.materialTypography
+import com.myagent.app.ui.design.skinColorsToClawColors
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -28,20 +31,30 @@ import androidx.core.view.WindowCompat
 private val LocalMementoDarkTheme = staticCompositionLocalOf { true }
 
 /**
+ * 皮肤颜色令牌，由 MementoTheme 注入，供 MessageBubble 等组件消费。
+ */
+val LocalSkinColors = staticCompositionLocalOf<SkinColors> {
+  SkinMode.NYX.darkColors()
+}
+
+/**
  * Memento 统一主题 — 合并了原 OpenClawTheme + ClawDesignTheme 的职责。
  *
  * 提供三层令牌：
  * 1. MaterialTheme (M3 ColorScheme) — 底层 Material3 控件
  * 2. LocalClawColors — Claw 组件系统的抽象层
  * 3. LocalMobileColors — 旧版移动端令牌（渐进废弃中）
+ * 4. LocalSkinColors — 皮肤系统令牌（气泡形状、背景纹理）
  */
 @Composable
 fun MementoTheme(
   themeMode: AppearanceThemeMode = AppearanceThemeMode.Dark,
+  skin: SkinMode = SkinMode.NYX,
   content: @Composable () -> Unit,
 ) {
   val isDark = themeMode.isDark(systemDark = isSystemInDarkTheme())
-  val clawColors = if (isDark) ClawDarkColors else ClawLightColors
+  val skinColors = if (isDark) skin.darkColors() else skin.lightColors()
+  val clawColors = skinColorsToClawColors(skinColors)
   val mobileColors = if (isDark) darkMobileColors() else lightMobileColors()
   val typography = clawTypography(mobileFontFamily)
 
@@ -53,6 +66,7 @@ fun MementoTheme(
     LocalClawSpacing provides ClawSpacing(),
     LocalClawRadii provides ClawRadii(),
     LocalClawTypography provides typography,
+    LocalSkinColors provides skinColors,
   ) {
     MaterialTheme(
       colorScheme = clawMaterialColorScheme(clawColors, isDark),

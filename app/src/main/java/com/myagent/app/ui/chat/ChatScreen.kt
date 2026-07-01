@@ -1,6 +1,8 @@
 package com.myagent.app.ui.chat
 
+import com.myagent.app.BackgroundPattern
 import com.myagent.app.MainViewModel
+import com.myagent.app.ui.LocalSkinColors
 import android.media.MediaPlayer
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -73,6 +75,7 @@ fun ChatScreen(
   val keyboardController = LocalSoftwareKeyboardController.current
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
+  val skinColors = LocalSkinColors.current
 
   // 自动滚动到最新消息 — 使用 scrollToItem 而非 animateScrollToItem，避免每 token 触发动画卡顿
   LaunchedEffect(messages.size, streamingText) {
@@ -83,6 +86,7 @@ fun ChatScreen(
 
   Column(
     modifier = modifier
+      .background(skinColors.canvas)
       .clickable(
         indication = null,
         interactionSource = remember { MutableInteractionSource() },
