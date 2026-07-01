@@ -1,4 +1,4 @@
-## MyAgent Android App
+## Memento Android App
 
 Status: **extremely alpha**. The app is actively being rebuilt from the ground up.
 
