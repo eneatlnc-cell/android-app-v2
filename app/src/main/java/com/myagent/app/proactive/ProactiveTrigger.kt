@@ -84,7 +84,7 @@ class ProactiveTrigger {
         )
       }
 
-      PersonaType.GENTLE -> if (isMorning) {
+      PersonaType.WARM -> if (isMorning) {
         listOf(
           "早安，今天也要好好照顾自己哦 🌸",
           "新的一天开始了，希望能和你一起度过美好的一天",

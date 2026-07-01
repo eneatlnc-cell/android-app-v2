@@ -347,7 +347,7 @@ class ChatController(
       id = UUID.randomUUID().toString(),
       role = "assistant",
       content = text,
-      timestamp = System.currentTimeMillis(),
+      timestampMs = System.currentTimeMillis(),
     )
     _messages.value = _messages.value + msg
   }

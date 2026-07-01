@@ -208,7 +208,7 @@ class NodeRuntime(
 
   /** 检查是否需要主动搭话（App 启动时调用） */
   fun checkProactive(isAppLaunch: Boolean = false): String? {
-    val persona = personaManager.getPersona()
+    val persona = personaManager.currentPersona.value
     if (!proactiveTrigger.shouldTrigger(lastInteractionMs, isAppLaunch)) return null
     val message = proactiveTrigger.getProactiveMessage(persona)
     // 搭话前更新交互时间，避免短时间内重复触发

@@ -57,7 +57,7 @@ fun ActivationScreen(
     if (input.isBlank()) {
       errorMessage = "请输入激活码"
       showError = true
-      return@Unit
+      return@doActivate
     }
     isLoading = true
     showError = false
