@@ -12,8 +12,11 @@ import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
 import android.util.Log
+import android.view.View
+import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import kotlinx.coroutines.*
 import java.io.File
 import kotlin.coroutines.resume
@@ -42,6 +45,7 @@ class HyperFramesRenderer(
   }
 
   private var webView: WebView? = null
+  private var container: FrameLayout? = null
   private val mainHandler = Handler(Looper.getMainLooper())
 
   /**
@@ -108,12 +112,7 @@ class HyperFramesRenderer(
       } catch (e: Exception) {
         Log.e(TAG, "Encoder stop failed: ${e.message}", e)
       }
-      try {
-        wv.destroy()
-      } catch (e: Exception) {
-        Log.w(TAG, "WebView destroy failed: ${e.message}")
-      }
-      webView = null
+      cleanupWebView()
     }
 
     outputFile
@@ -121,38 +120,70 @@ class HyperFramesRenderer(
 
   fun close() {
     mainHandler.post {
-      webView?.destroy()
-      webView = null
+      cleanupWebView()
     }
   }
 
-  // ── WebView 管理 ──
+  // ── WebView 管理（容器 attach + 软件层） ──
 
+  /**
+   * 创建 WebView 并 attach 到隐藏 FrameLayout 容器。
+   *
+   * 根因：Android 12+ 硬件加速在未 attach 的 WebView 上调用 draw(Canvas)
+   * 只输出背景色，不渲染 CSS/文字/图形。必须切 LAYER_TYPE_SOFTWARE 并 attach
+   * 到 ViewGroup 才能触发完整渲染管线。
+   */
   private fun createWebView(width: Int, height: Int): WebView {
+    // 清理旧实例
+    cleanupWebView()
+
+    // 1. 创建隐藏容器
+    val c = FrameLayout(app).apply {
+      layoutParams = ViewGroup.LayoutParams(width, height)
+    }
+    container = c
+
+    // 2. 创建 WebView（软件层 + attach）
+    val wv = WebView(app).apply {
+      // 切软件层 — 截图场景必须，硬件加速在未 attach 时无法正常工作
+      setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
+      // 设置尺寸
+      layout(0, 0, width, height)
+      measure(
+        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+      )
+
+      settings.apply {
+        javaScriptEnabled = true
+        domStorageEnabled = true
+        allowFileAccess = true
+        blockNetworkLoads = true
+      }
+      webViewClient = WebViewClient()
+    }
+
+    // 3. 关键：attach 到容器（未 attach 的 View 无法触发硬件加速渲染管线）
+    c.addView(wv, ViewGroup.LayoutParams(width, height))
+    webView = wv
+    return wv
+  }
+
+  /**
+   * 清理 WebView 和容器，防止内存泄漏。
+   */
+  private fun cleanupWebView() {
+    try {
+      container?.removeAllViews()
+    } catch (_: Exception) {}
     try {
       webView?.destroy()
     } catch (_: Exception) {
       Log.w(TAG, "WebView destroy failed, continuing")
     }
     webView = null
-
-    val wv = WebView(app).apply {
-      layout(0, 0, width, height)
-      measure(
-        android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY),
-        android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY)
-      )
-      settings.apply {
-        javaScriptEnabled = true
-        domStorageEnabled = true
-        allowFileAccess = true
-        blockNetworkLoads = true
-        // setRenderPriority 已在 API 26 弃用、API 31 移除，minSdk=31 无需设置
-      }
-      webViewClient = WebViewClient()
-    }
-    webView = wv
-    return wv
+    container = null
   }
 
   private suspend fun loadHtmlAndWait(wv: WebView, html: String): Boolean {
